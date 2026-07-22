@@ -34,12 +34,11 @@ var webp_enc_simd_exports = {};
 __export(webp_enc_simd_exports, {
   default: () => webp_enc_simd_default
 });
-var import_meta, Module, webp_enc_simd_default;
+var Module, webp_enc_simd_default;
 var init_webp_enc_simd = __esm({
   "node_modules/@jsquash/webp/codec/enc/webp_enc_simd.js"() {
-    import_meta = {};
-    Module = (() => {
-      var _scriptDir = import_meta.url;
+    Module = /* @__PURE__ */ (() => {
+      var _scriptDir = "app://obsidian.md/";
       return function(Module3 = {}) {
         var Module3 = typeof Module3 != "undefined" ? Module3 : {};
         var readyPromiseResolve, readyPromiseReject;
@@ -59,7 +58,7 @@ var init_webp_enc_simd = __esm({
               }
             };
           }
-          if (import_meta.url === void 0) {
+          if (false) {
             import_meta.url = "https://localhost";
           }
           if (self.location === void 0) {
@@ -343,7 +342,7 @@ var init_webp_enc_simd = __esm({
             wasmBinaryFile = locateFile(wasmBinaryFile);
           }
         } else {
-          wasmBinaryFile = new URL("webp_enc_simd.wasm", import_meta.url).href;
+          wasmBinaryFile = new URL("webp_enc_simd.wasm", "app://obsidian.md/").href;
         }
         function getBinary(file) {
           try {
@@ -1530,12 +1529,11 @@ var webp_enc_exports = {};
 __export(webp_enc_exports, {
   default: () => webp_enc_default
 });
-var import_meta2, Module2, webp_enc_default;
+var Module2, webp_enc_default;
 var init_webp_enc = __esm({
   "node_modules/@jsquash/webp/codec/enc/webp_enc.js"() {
-    import_meta2 = {};
-    Module2 = (() => {
-      var _scriptDir = import_meta2.url;
+    Module2 = /* @__PURE__ */ (() => {
+      var _scriptDir = "app://obsidian.md/";
       return function(Module3 = {}) {
         var Module3 = typeof Module3 != "undefined" ? Module3 : {};
         var readyPromiseResolve, readyPromiseReject;
@@ -1556,8 +1554,8 @@ var init_webp_enc = __esm({
               }
             };
           }
-          if (import_meta2.url === void 0) {
-            import_meta2.url = "https://localhost";
+          if (false) {
+            import_meta.url = "https://localhost";
           }
           if (typeof self !== "undefined" && self.location === void 0) {
             self.location = { href: "" };
@@ -1840,7 +1838,7 @@ var init_webp_enc = __esm({
             wasmBinaryFile = locateFile(wasmBinaryFile);
           }
         } else {
-          wasmBinaryFile = new URL("webp_enc.wasm", import_meta2.url).href;
+          wasmBinaryFile = new URL("webp_enc.wasm", "app://obsidian.md/").href;
         }
         function getBinary(file) {
           try {
@@ -5142,7 +5140,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
     return this.uploadBuffer(binary, candidate.file.name, noteFile);
   }
   buildReplacement(ref, candidate, publicUrl) {
-    const encodedBase = encodeURI(publicUrl);
+    const encodedBase = publicUrl;
     const url = ref.fragment ? `${encodedBase}#${encodeURIComponent(ref.fragment)}` : encodedBase;
     const label = ref.label || candidate.file.basename;
     if (candidate.replacement === "image")
@@ -5386,7 +5384,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       try {
         const buffer = await file.arrayBuffer();
         const result = await this.uploadBuffer(buffer, originalName, noteFile || void 0);
-        const replacement = `![${escapeMarkdownLabel(originalName)}](${encodeURI(result.publicUrl)})`;
+        const replacement = `![${escapeMarkdownLabel(originalName)}](${result.publicUrl})`;
         for (let i = 0; i < editor.lineCount(); i++) {
           const line = editor.getLine(i);
           if (line.includes(placeholder)) {

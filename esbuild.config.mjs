@@ -67,6 +67,9 @@ const context = await esbuild.context({
   sourcemap: prod ? false : "inline",
   treeShaking: true,
   outfile: "main.js",
+  define: {
+    "import.meta.url": "'app://obsidian.md/'"
+  },
   plugins: [copyWasmPlugin],
 });
 

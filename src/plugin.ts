@@ -488,7 +488,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string): string {
-    const encodedBase = encodeURI(publicUrl);
+    const encodedBase = publicUrl;
     const url = ref.fragment
       ? `${encodedBase}#${encodeURIComponent(ref.fragment)}`
       : encodedBase;
@@ -752,7 +752,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       try {
         const buffer = await file.arrayBuffer();
         const result = await this.uploadBuffer(buffer, originalName, noteFile || undefined);
-        const replacement = `![${escapeMarkdownLabel(originalName)}](${encodeURI(result.publicUrl)})`;
+        const replacement = `![${escapeMarkdownLabel(originalName)}](${result.publicUrl})`;
         
         for (let i = 0; i < editor.lineCount(); i++) {
           const line = editor.getLine(i);
