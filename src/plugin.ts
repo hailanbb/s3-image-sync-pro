@@ -45,10 +45,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     // Initialize WASM file path for image compression
     setWasmLoader(async (filename: string) => {
-      const url = this.app.vault.adapter.getResourcePath(`${this.manifest.dir}/${filename}`);
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Fetch wasm failed: ${res.status}`);
-      return await res.arrayBuffer();
+      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
     });
 
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {

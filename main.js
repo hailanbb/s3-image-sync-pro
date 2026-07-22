@@ -4722,11 +4722,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
     this.locale = detectLocaleFromApp(import_obsidian5.getLanguage);
     this.isMobile = import_obsidian5.Platform.isMobile;
     setWasmLoader(async (filename) => {
-      const url = this.app.vault.adapter.getResourcePath(`${this.manifest.dir}/${filename}`);
-      const res = await fetch(url);
-      if (!res.ok)
-        throw new Error(`Fetch wasm failed: ${res.status}`);
-      return await res.arrayBuffer();
+      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
     });
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
       void this.scanCurrentNote();
