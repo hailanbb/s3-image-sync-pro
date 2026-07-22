@@ -1,4 +1,4 @@
-import { App, Modal, Notice, TFile } from "obsidian";
+import { App, Modal, Notice, TFile, setIcon } from "obsidian";
 import type S3ImageSyncPlugin from "./plugin";
 import { Candidate, ProgressState, LocalFileRecord } from "./types";
 import { formatBytes, isPreviewableImage } from "./utils";
@@ -63,7 +63,7 @@ export class CandidateModal extends Modal {
       
       // Custom Checkbox Indicator overlay on top-left of image preview
       const checkIcon = previewArea.createDiv({ cls: "attachment-imagebed-manager-gallery-check" });
-      checkIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>';
+      setIcon(checkIcon, "check");
 
       if (isPreviewableImage(candidate.file.extension)) {
         const image = previewArea.createEl("img");

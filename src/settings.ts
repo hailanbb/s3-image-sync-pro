@@ -130,7 +130,7 @@ function migrateOldSettings(loaded: OldLoadedSettings): Partial<PluginSettings> 
 }
 
 export function mergeSettings(defaults: PluginSettings, loaded: unknown): PluginSettings {
-  const data: LoadedSettings = isObject(loaded) ? loaded as LoadedSettings : {};
+  const data: LoadedSettings = isObject(loaded) ? loaded : {};
   const migrated = migrateOldSettings(data);
 
   const s3Data = data.s3 || migrated.s3 || data.r2 || {};

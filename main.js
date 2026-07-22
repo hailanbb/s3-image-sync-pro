@@ -3983,7 +3983,7 @@ var CandidateModal = class extends import_obsidian2.Modal {
       this.cardMap.set(path, card);
       const previewArea = card.createDiv({ cls: "attachment-imagebed-manager-gallery-preview" });
       const checkIcon = previewArea.createDiv({ cls: "attachment-imagebed-manager-gallery-check" });
-      checkIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>';
+      (0, import_obsidian2.setIcon)(checkIcon, "check");
       if (isPreviewableImage(candidate.file.extension)) {
         const image = previewArea.createEl("img");
         image.src = this.app.vault.getResourcePath(candidate.file);
@@ -4395,7 +4395,7 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     const t2 = (k, p) => this.plugin.t(k, p);
     const configured = this.isS3Configured();
     const statusEl = containerEl.createDiv({ cls: "attachment-imagebed-manager-status" });
-    const icon = statusEl.createEl("span", {
+    const icon = statusEl.createSpan({
       cls: configured ? "attachment-imagebed-manager-status-ok" : "attachment-imagebed-manager-status-warn"
     });
     icon.textContent = configured ? "\u2705" : "\u26A0\uFE0F";
@@ -4619,23 +4619,23 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     const catCheckbox = headerRow.createEl("input", { type: "checkbox" });
     catCheckbox.checked = catEnabled;
     catCheckbox.indeterminate = catPartiallyEnabled;
-    const catLabel = headerRow.createEl("span", { cls: "attachment-imagebed-manager-category-name" });
+    const catLabel = headerRow.createSpan({ cls: "attachment-imagebed-manager-category-name" });
     catLabel.textContent = `${icon} ${t2(category.nameKey)}`;
-    const countLabel = headerRow.createEl("span", { cls: "attachment-imagebed-manager-category-count" });
+    const countLabel = headerRow.createSpan({ cls: "attachment-imagebed-manager-category-count" });
     countLabel.textContent = t2("extCount", { enabled: enabledCount, total: totalCount });
     const autoEnabled = category.extensions.filter((e) => enabledSet.has(e)).every((e) => autoSet.has(e));
     const autoLabel = headerRow.createEl("label", { cls: "attachment-imagebed-manager-auto-label" });
     const autoCheckbox = autoLabel.createEl("input", { type: "checkbox" });
     autoCheckbox.checked = autoEnabled;
     autoLabel.createSpan({ text: t2("autoScanShort") });
-    const toggleBtn = headerRow.createEl("span", { cls: "attachment-imagebed-manager-category-toggle" });
+    const toggleBtn = headerRow.createSpan({ cls: "attachment-imagebed-manager-category-toggle" });
     toggleBtn.textContent = defaultExpanded ? "\u25BC" : "\u25B6";
     const chipsBody = card.createDiv({ cls: "attachment-imagebed-manager-category-body" });
     if (!defaultExpanded)
       chipsBody.addClass("attachment-imagebed-manager-collapsed");
     const chips = chipsBody.createDiv({ cls: "attachment-imagebed-manager-chips" });
     for (const ext of category.extensions) {
-      const chip = chips.createEl("span", { cls: "attachment-imagebed-manager-chip" });
+      const chip = chips.createSpan({ cls: "attachment-imagebed-manager-chip" });
       if (enabledSet.has(ext))
         chip.addClass("attachment-imagebed-manager-chip-active");
       chip.textContent = `.${ext}`;
@@ -4688,7 +4688,7 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     const customExts = settings.customExtensions.filter((e) => !allKnownExts.includes(e));
     const card = containerEl.createDiv({ cls: "attachment-imagebed-manager-category" });
     const headerRow = card.createDiv({ cls: "attachment-imagebed-manager-category-header" });
-    headerRow.createEl("span", { cls: "attachment-imagebed-manager-category-name" }).textContent = `\u2795 ${t2("customExtensions")}`;
+    headerRow.createSpan({ cls: "attachment-imagebed-manager-category-name" }).textContent = `\u2795 ${t2("customExtensions")}`;
     let inputValue = "";
     const inputRow = card.createDiv({ cls: "attachment-imagebed-manager-custom-input-row" });
     const input = inputRow.createEl("input", {
@@ -4714,7 +4714,7 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     if (customExts.length > 0) {
       const tagContainer = card.createDiv({ cls: "attachment-imagebed-manager-custom-tags" });
       for (const ext of customExts) {
-        const tag = tagContainer.createEl("span", { cls: "attachment-imagebed-manager-custom-tag" });
+        const tag = tagContainer.createSpan({ cls: "attachment-imagebed-manager-custom-tag" });
         const extCheckbox = tag.createEl("input", { type: "checkbox" });
         extCheckbox.checked = enabledSet.has(ext);
         extCheckbox.addEventListener("change", () => {
@@ -4738,9 +4738,9 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
           settings.autoCandidateExts = Array.from(autoSet);
           void this.plugin.saveSettings();
         });
-        const autoSpan = tag.createEl("span", { cls: "attachment-imagebed-manager-auto-text" });
+        const autoSpan = tag.createSpan({ cls: "attachment-imagebed-manager-auto-text" });
         autoSpan.textContent = t2("autoScanShort");
-        const removeBtn = tag.createEl("span", { cls: "attachment-imagebed-manager-remove" });
+        const removeBtn = tag.createSpan({ cls: "attachment-imagebed-manager-remove" });
         removeBtn.textContent = "\xD7";
         removeBtn.addEventListener("click", () => {
           settings.customExtensions = settings.customExtensions.filter((e) => e !== ext);
