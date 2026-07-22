@@ -45,7 +45,10 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     // Initialize WASM file path for image compression
     setWasmLoader(async (filename: string) => {
-      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
+      const url = this.app.vault.adapter.getResourcePath(`${this.manifest.dir}/${filename}`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Fetch wasm failed: ${res.status}`);
+      return await res.arrayBuffer();
     });
 
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
@@ -456,6 +459,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         ext = compressed.ext;
         contentType = compressed.contentType;
       } catch (error) {
+        new Notice(`WebP compression failed: ${error instanceof Error ? error.message : String(error)}`);
         console.warn(`WebP compression failed for ${originalName}, uploading original:`, error);
       }
     }
