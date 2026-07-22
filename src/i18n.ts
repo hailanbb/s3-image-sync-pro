@@ -92,6 +92,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "• \\{yyyy}: Current year (4 digits)\n" +
       "• \\{MM}: Current month (2 digits)\n" +
       "• \\{dd}: Current day (2 digits)\n" +
+      "• \\{notedir}: Note's directory path in vault (e.g. Projects/Tech)\n" +
+      "• \\{notename}: Note file name without extension\n" +
       "Default: attachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
     testConnection: "Test connection",
     testConnectionDesc: "Click to verify your credentials are correct.",
@@ -114,6 +116,14 @@ export const I18N: Record<string, Record<string, string>> = {
     deleteDelayed: "Delete after a delay",
     deleteDelayHours: "Delay before delete (hours)",
     deleteDelayHoursDesc: "Files will be moved to trash after this many hours.",
+    deleteRemoteOnNoteDelete: "Delete remote images when note is deleted",
+    deleteRemoteOnNoteDeleteDesc: "When a note is deleted, also delete its remote S3/R2 images. Each image belongs to its own note — no cross-reference checking.",
+    webpCompression: "WebP compression",
+    webpCompressionDesc: "Convert images to WebP format before uploading (WASM-based, no Canvas API). Reduces file size significantly.",
+    webpQuality: "WebP quality",
+    webpQualityDesc: "Compression quality (1-100). Higher = better quality, larger file. Default: 80",
+    webpSkipFormats: "Skip formats",
+    webpSkipFormatsDesc: "File extensions to skip for WebP conversion (comma-separated). SVG and GIF are skipped by default.",
     automaticScan: "Auto-scan vault periodically",
     automaticScanDesc: "Automatically find and replace eligible images in the background.",
     scanInterval: "Scan interval (minutes)",
@@ -245,6 +255,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "• \\{yyyy}：4位当前年份 (如 2026)\n" +
       "• \\{MM}：2位当前月份 (如 06)\n" +
       "• \\{dd}：2位当前日期 (如 17)\n" +
+      "• \\{notedir}：笔记所在目录路径 (如 项目/技术)\n" +
+      "• \\{notename}：笔记文件名 (不含扩展名)\n" +
       "默认值：attachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
     testConnection: "测试连接",
     testConnectionDesc: "点击验证凭据是否正确。",
@@ -267,6 +279,14 @@ export const I18N: Record<string, Record<string, string>> = {
     deleteDelayed: "延迟删除",
     deleteDelayHours: "延迟删除时间（小时）",
     deleteDelayHoursDesc: "文件将在指定小时后移入回收站。",
+    deleteRemoteOnNoteDelete: "删除笔记时同步删除云端图片",
+    deleteRemoteOnNoteDeleteDesc: "删除笔记时，自动删除该笔记中引用的 S3/R2 远程图片。图片跟着笔记走，不做跨笔记引用检查。",
+    webpCompression: "WebP 压缩",
+    webpCompressionDesc: "上传前将图片转换为 WebP 格式（基于 WASM 编码器），可大幅减小文件体积。",
+    webpQuality: "压缩质量",
+    webpQualityDesc: "压缩质量 (1-100)，数值越高质量越好、体积越大。默认：80",
+    webpSkipFormats: "跳过的格式",
+    webpSkipFormatsDesc: "不进行 WebP 转换的文件扩展名（逗号分隔）。SVG 和 GIF 默认跳过。",
     automaticScan: "定期自动扫描全库",
     automaticScanDesc: "自动在后台查找并替换符合条件的图片。",
     scanInterval: "扫描间隔（分钟）",

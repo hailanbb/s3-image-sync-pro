@@ -40,6 +40,10 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   customExtensions: [],
   customReplacements: {},
   pendingDeletes: [],
+  webpEnabled: false,
+  webpQuality: 80,
+  webpSkipFormats: ["svg", "gif"],
+  deleteRemoteOnNoteDelete: false,
   logs: [],
 };
 

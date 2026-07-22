@@ -243,6 +243,60 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         );
     }
 
+    new Setting(containerEl)
+      .setName(t("deleteRemoteOnNoteDelete"))
+      .setDesc(t("deleteRemoteOnNoteDeleteDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.deleteRemoteOnNoteDelete).onChange((value) => {
+          this.plugin.settings.deleteRemoteOnNoteDelete = value;
+          if (value) void this.plugin.initRemoteUrlCache();
+          void save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName(t("webpCompression"))
+      .setDesc(t("webpCompressionDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.webpEnabled).onChange((value) => {
+          this.plugin.settings.webpEnabled = value;
+          void save();
+          this.renderSettings();
+        })
+      );
+
+    if (this.plugin.settings.webpEnabled) {
+      new Setting(containerEl)
+        .setName(t("webpQuality"))
+        .setDesc(t("webpQualityDesc"))
+        .addSlider((slider) =>
+          slider
+            .setLimits(1, 100, 1)
+            .setValue(this.plugin.settings.webpQuality)
+            .setDynamicTooltip()
+            .onChange((value) => {
+              this.plugin.settings.webpQuality = value;
+              debouncedSave();
+            })
+        );
+
+      new Setting(containerEl)
+        .setName(t("webpSkipFormats"))
+        .setDesc(t("webpSkipFormatsDesc"))
+        .addText((text) =>
+          text
+            .setPlaceholder("svg, gif")
+            .setValue(this.plugin.settings.webpSkipFormats.join(", "))
+            .onChange((value) => {
+              this.plugin.settings.webpSkipFormats = value
+                .split(/[,\s]+/)
+                .map((e) => e.trim().toLowerCase())
+                .filter(Boolean);
+              debouncedSave();
+            })
+        );
+    }
+
     if (!this.plugin.isMobile) {
       new Setting(containerEl)
         .setName(t("automaticScan"))

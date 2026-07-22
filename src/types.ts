@@ -31,6 +31,10 @@ export interface PluginSettings {
   customExtensions: string[];
   customReplacements: Record<string, ReplacementType>;
   pendingDeletes: PendingDelete[];
+  webpEnabled: boolean;
+  webpQuality: number;
+  webpSkipFormats: string[];
+  deleteRemoteOnNoteDelete: boolean;
   logs: LogEntry[];
 }
 

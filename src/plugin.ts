@@ -28,6 +28,7 @@ import {
 import { detectLocaleFromApp, t as translate } from "./i18n";
 import { CandidateModal } from "./candidate-modal";
 import { DryRunModal } from "./dry-run-modal";
+import { compressToWebp, setPluginDir } from "./image-compressor";
 import { S3ImageSyncSettingTab } from "./settings-tab";
 
 export default class S3ImageSyncPlugin extends Plugin {
@@ -35,11 +36,17 @@ export default class S3ImageSyncPlugin extends Plugin {
   locale!: string;
   autoScanTimer: number | null = null;
   isMobile: boolean = false;
+  private noteRemoteUrls: Map<string, string[]> = new Map();
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.locale = detectLocaleFromApp(getLanguage);
     this.isMobile = Platform.isMobile;
+
+    // Initialize WASM file path for image compression
+    const pluginDir = (this.app.vault.adapter as any).getBasePath() +
+      "/" + this.manifest.dir;
+    setPluginDir(pluginDir);
 
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
       void this.scanCurrentNote();
@@ -73,6 +80,25 @@ export default class S3ImageSyncPlugin extends Plugin {
           });
         }, 60 * 1000)
       );
+    }
+    // Cache remote URLs for note-delete sync
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file instanceof TFile && file.extension === "md") {
+          void this.cacheRemoteUrls(file);
+        }
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (file instanceof TFile && file.extension === "md") {
+          void this.handleNoteDelete(file.path);
+        }
+      })
+    );
+    // Initialize cache for existing notes
+    if (this.settings.deleteRemoteOnNoteDelete) {
+      void this.initRemoteUrlCache();
     }
     this.configureAutoScan();
   }
@@ -315,7 +341,7 @@ export default class S3ImageSyncPlugin extends Plugin {
             total: uniqueFiles,
             label: candidate.file.name,
           });
-          upload = await this.uploadCandidate(candidate);
+          upload = await this.uploadCandidate(candidate, noteFile);
           uploaded.set(candidate.file.path, upload);
           uploadedKeys.push(upload.key);
           completedUploads += 1;
@@ -402,18 +428,45 @@ export default class S3ImageSyncPlugin extends Plugin {
     return { replaced, localFiles };
   }
 
-  async uploadCandidate(candidate: Candidate): Promise<UploadResult> {
+  async uploadCandidate(candidate: Candidate, noteFile?: TFile): Promise<UploadResult> {
     const binary = await this.app.vault.readBinary(candidate.file);
-    const body = new Uint8Array(binary);
+    let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
-    const ext = candidate.file.extension.toLowerCase();
+    let ext = candidate.file.extension.toLowerCase();
+    let contentType = contentTypeForExt(ext);
+
+    // WebP compression (WASM-based, no Canvas API)
+    if (
+      this.settings.webpEnabled &&
+      !this.settings.webpSkipFormats.includes(ext)
+    ) {
+      try {
+        const compressed = await compressToWebp(
+          binary,
+          ext,
+          this.settings.webpQuality
+        );
+        body = compressed.body;
+        ext = compressed.ext;
+        contentType = compressed.contentType;
+        console.log(
+          `WebP compression: ${candidate.file.name} ${compressed.originalSize} -> ${compressed.compressedSize} bytes`
+        );
+      } catch (error) {
+        console.warn(`WebP compression failed for ${candidate.file.name}, uploading original:`, error);
+      }
+    }
+
+    const noteDir = noteFile?.parent?.path || "";
+    const noteName = noteFile?.basename || "";
     const key = renderPathTemplate(this.settings.s3.pathTemplate, {
       ext,
       hash,
       hash2: hash.slice(0, 2),
       filename: safeFilename(candidate.file.name),
+      notedir: noteDir,
+      notename: noteName,
     });
-    const contentType = contentTypeForExt(ext);
     await putS3Object(
       this.settings.s3,
       key,
@@ -563,5 +616,85 @@ export default class S3ImageSyncPlugin extends Plugin {
       ...entry,
     } as LogEntry);
     this.settings.logs = this.settings.logs.slice(0, 100);
+  }
+
+  extractRemoteUrls(text: string): string[] {
+    const domain = this.settings.s3.customDomainName;
+    if (!domain) return [];
+    let cleanDomain = domain.replace(/\/+$/, "");
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
+      cleanDomain = `https://${cleanDomain}`;
+    }
+    const escaped = cleanDomain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`${escaped}/[^\\s)\\]"'>]+`, "g");
+    const urls: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(text)) !== null) {
+      urls.push(match[0]);
+    }
+    return [...new Set(urls)];
+  }
+
+  remoteUrlToS3Key(url: string): string {
+    let cleanDomain = this.settings.s3.customDomainName.replace(/\/+$/, "");
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
+      cleanDomain = `https://${cleanDomain}`;
+    }
+    const key = url.slice(cleanDomain.length + 1); // +1 for the '/' after domain
+    return decodeURIComponent(key);
+  }
+
+  async cacheRemoteUrls(file: TFile): Promise<void> {
+    if (!this.settings.deleteRemoteOnNoteDelete) return;
+    try {
+      const text = await this.app.vault.cachedRead(file);
+      const urls = this.extractRemoteUrls(text);
+      if (urls.length > 0) {
+        this.noteRemoteUrls.set(file.path, urls);
+      } else {
+        this.noteRemoteUrls.delete(file.path);
+      }
+    } catch {
+      // File might not be readable
+    }
+  }
+
+  async initRemoteUrlCache(): Promise<void> {
+    const files = this.app.vault.getMarkdownFiles();
+    for (const file of files) {
+      await this.cacheRemoteUrls(file);
+    }
+  }
+
+  async handleNoteDelete(notePath: string): Promise<void> {
+    if (!this.settings.deleteRemoteOnNoteDelete) return;
+    if (!this.settings.s3.customDomainName) return;
+    const urls = this.noteRemoteUrls.get(notePath);
+    if (!urls || urls.length === 0) return;
+    this.noteRemoteUrls.delete(notePath);
+
+    for (const url of urls) {
+      try {
+        const key = this.remoteUrlToS3Key(url);
+        await deleteS3Object(this.settings.s3, key);
+        this.addLog({
+          status: "remote-deleted-on-note-delete",
+          notePath,
+          sourcePath: "",
+          remoteUrl: url,
+          trashed: false,
+        });
+      } catch (error) {
+        console.error(`Failed to delete remote object for ${url}:`, error);
+        this.addLog({
+          status: "remote-delete-failed",
+          notePath,
+          sourcePath: "",
+          remoteUrl: url,
+          trashed: false,
+        });
+      }
+    }
+    await this.saveSettings();
   }
 }

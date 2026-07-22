@@ -12,7 +12,7 @@ export function safeFilename(name: string): string {
 
 export function renderPathTemplate(
   template: string,
-  values: { ext: string; hash: string; hash2: string; filename: string }
+  values: { ext: string; hash: string; hash2: string; filename: string; notedir?: string; notename?: string }
 ): string {
   const now = new Date();
   const yyyy = String(now.getFullYear());
@@ -25,6 +25,8 @@ export function renderPathTemplate(
     .replace(/\{hash\}/g, values.hash)
     .replace(/\{hash2\}/g, values.hash2)
     .replace(/\{filename\}/g, values.filename)
+    .replace(/\{notedir\}/g, values.notedir ? values.notedir.replace(/[\\:*?"<>|]+/g, "-") : "")
+    .replace(/\{notename\}/g, values.notename ? values.notename.replace(/[\\/:*?"<>|#%]+/g, "-") : "")
     .replace(/\{hash-short\}/g, hashShort)
     .replace(/\{yyyy\}/g, yyyy)
     .replace(/\{MM\}/g, MM)
