@@ -144,6 +144,7 @@ export function mergeSettings(defaults: PluginSettings, loaded: unknown): Plugin
 
   return {
     ...defaults,
+    ...data,
     s3,
     enabledExtensions: migrated.enabledExtensions || data.enabledExtensions || defaults.enabledExtensions,
     minSizeRules: migrated.minSizeRules || data.minSizeRules || defaults.minSizeRules,

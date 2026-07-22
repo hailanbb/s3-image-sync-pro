@@ -3155,6 +3155,7 @@ function mergeSettings(defaults, loaded) {
   };
   return {
     ...defaults,
+    ...data,
     s3,
     enabledExtensions: migrated.enabledExtensions || data.enabledExtensions || defaults.enabledExtensions,
     minSizeRules: migrated.minSizeRules || data.minSizeRules || defaults.minSizeRules,
@@ -4425,12 +4426,6 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         void save();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName(t2("attachmentRoot")).setDesc(t2("attachmentRootDesc")).addText(
-      (text) => text.setValue(this.plugin.settings.attachmentRoot).onChange((value) => {
-        this.plugin.settings.attachmentRoot = value.trim() || "90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6";
-        void save();
-      })
-    );
     new import_obsidian4.Setting(containerEl).setName(t2("autoUploadOnPaste")).setDesc(t2("autoUploadOnPasteDesc")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.autoUploadOnPaste).onChange((value) => {
         this.plugin.settings.autoUploadOnPaste = value;
@@ -4727,7 +4722,11 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
     this.locale = detectLocaleFromApp(import_obsidian5.getLanguage);
     this.isMobile = import_obsidian5.Platform.isMobile;
     setWasmLoader(async (filename) => {
-      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
+      const url = this.app.vault.adapter.getResourcePath(`${this.manifest.dir}/${filename}`);
+      const res = await fetch(url);
+      if (!res.ok)
+        throw new Error(`Fetch wasm failed: ${res.status}`);
+      return await res.arrayBuffer();
     });
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
       void this.scanCurrentNote();
@@ -5118,6 +5117,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
         ext = compressed.ext;
         contentType = compressed.contentType;
       } catch (error) {
+        new import_obsidian5.Notice(`WebP compression failed: ${error instanceof Error ? error.message : String(error)}`);
         console.warn(`WebP compression failed for ${originalName}, uploading original:`, error);
       }
     }

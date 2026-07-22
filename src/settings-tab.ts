@@ -206,15 +206,6 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         })
       );
 
-    new Setting(containerEl)
-      .setName(t("attachmentRoot"))
-      .setDesc(t("attachmentRootDesc"))
-      .addText((text) =>
-        text.setValue(this.plugin.settings.attachmentRoot).onChange((value) => {
-          this.plugin.settings.attachmentRoot = value.trim() || "90-笔记系统/92-附件";
-          void save();
-        })
-      );
 
     new Setting(containerEl)
       .setName(t("autoUploadOnPaste"))
