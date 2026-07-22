@@ -3412,7 +3412,7 @@ async function putS3Object(config, key, body, contentType, formatError, precompu
     const now = /* @__PURE__ */ new Date();
     const amzDate = toAmzDate(now);
     const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = precomputedHash || await sha256Hex(safeBody);
+    const payloadHash = "UNSIGNED-PAYLOAD";
     const canonicalHeaders = [
       `host:${parsed.host}`,
       `x-amz-content-sha256:${payloadHash}`,

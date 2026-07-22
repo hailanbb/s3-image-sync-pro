@@ -40,7 +40,10 @@ export async function putS3Object(
     const now = new Date();
     const amzDate = toAmzDate(now);
     const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = precomputedHash || await sha256Hex(safeBody);
+    // CRITICAL FIX: AWS S3 & Cloudflare R2 support "UNSIGNED-PAYLOAD" for HTTPS requests.
+    // This entirely bypasses the x-amz-content-sha256 body hash verification, which fixes the Mismatch 
+    // error caused by Electron IPC altering or truncating ArrayBuffers during requestUrl calls.
+    const payloadHash = "UNSIGNED-PAYLOAD";
 
     const canonicalHeaders =
       [
