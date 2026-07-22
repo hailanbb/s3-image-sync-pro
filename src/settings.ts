@@ -44,6 +44,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   webpQuality: 80,
   webpSkipFormats: ["svg", "gif"],
   deleteRemoteOnNoteDelete: false,
+  autoUploadOnPaste: false,
   logs: [],
 };
 

@@ -1,4 +1,4 @@
-import { Notice, Platform, Plugin, TFile, getLanguage } from "obsidian";
+import { Notice, Platform, Plugin, TFile, getLanguage, Editor, MarkdownView, MarkdownFileInfo } from "obsidian";
 import {
   Candidate,
   DeletePolicy,
@@ -95,6 +95,13 @@ export default class S3ImageSyncPlugin extends Plugin {
           void this.handleNoteDelete(file.path);
         }
       })
+    );
+    // Paste and Drop event listeners
+    this.registerEvent(
+      this.app.workspace.on("editor-paste", this.onEditorPaste.bind(this))
+    );
+    this.registerEvent(
+      this.app.workspace.on("editor-drop", this.onEditorDrop.bind(this))
     );
     // Initialize cache for existing notes
     if (this.settings.deleteRemoteOnNoteDelete) {
@@ -428,11 +435,10 @@ export default class S3ImageSyncPlugin extends Plugin {
     return { replaced, localFiles };
   }
 
-  async uploadCandidate(candidate: Candidate, noteFile?: TFile): Promise<UploadResult> {
-    const binary = await this.app.vault.readBinary(candidate.file);
+  async uploadBuffer(binary: ArrayBuffer, originalName: string, noteFile?: TFile): Promise<UploadResult> {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
-    let ext = candidate.file.extension.toLowerCase();
+    let ext = (originalName.split(".").pop() || "").toLowerCase();
     let contentType = contentTypeForExt(ext);
 
     // WebP compression (WASM-based, no Canvas API)
@@ -450,7 +456,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         ext = compressed.ext;
         contentType = compressed.contentType;
       } catch (error) {
-        console.warn(`WebP compression failed for ${candidate.file.name}, uploading original:`, error);
+        console.warn(`WebP compression failed for ${originalName}, uploading original:`, error);
       }
     }
 
@@ -460,7 +466,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       ext,
       hash,
       hash2: hash.slice(0, 2),
-      filename: safeFilename(candidate.file.name),
+      filename: safeFilename(originalName.replace(/\.[^/.]+$/, "")),
       notedir: noteDir,
       notename: noteName,
     });
@@ -472,7 +478,12 @@ export default class S3ImageSyncPlugin extends Plugin {
       (status, text) => this.t("uploadFailed", { status, text }),
       hash
     );
-    return { key, publicUrl: buildPublicUrl(this.settings.s3.customDomainName, key) };
+    return { key, publicUrl: buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key) };
+  }
+
+  async uploadCandidate(candidate: Candidate, noteFile?: TFile): Promise<UploadResult> {
+    const binary = await this.app.vault.readBinary(candidate.file);
+    return this.uploadBuffer(binary, candidate.file.name, noteFile);
   }
 
   buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string): string {

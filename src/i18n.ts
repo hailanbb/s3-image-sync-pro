@@ -108,6 +108,8 @@ export const I18N: Record<string, Record<string, string>> = {
     mobileHint:
       "Note: Scheduled auto-scan and delayed delete are disabled on mobile devices. Manual upload and replacement work normally.",
     attachmentRoot: "Image folder",
+    autoUploadOnPaste: "Auto upload on paste / drop",
+    autoUploadOnPasteDesc: "Automatically intercept images pasted or dropped into the editor, upload them to S3 in the background, and insert the remote URL directly. (No local files will be saved).",
     attachmentRootDesc: "Only files under this folder will be processed. Default: 99 Attachments",
     deletePolicy: "After replacing links, delete local files?",
     deletePolicyDesc: "Choose what happens to the original local files after they are replaced with remote URLs.",
@@ -271,6 +273,8 @@ export const I18N: Record<string, Record<string, string>> = {
     mobileHint:
       "提示：移动端不支持定时自动扫描和延迟删除。手动上传和替换功能正常使用。",
     attachmentRoot: "图片文件夹",
+    autoUploadOnPaste: "粘贴/拖拽图片自动上传",
+    autoUploadOnPasteDesc: "开启后，直接在编辑器中粘贴或拖拽的图片将被无感拦截，直接后台上传至 S3 并替换为云端链接（本地不再保存原图垃圾）。",
     attachmentRootDesc: "只处理此文件夹下的图片。默认：90-笔记系统/92-附件",
     deletePolicy: "替换链接后，是否删除本地文件？",
     deletePolicyDesc: "选择替换为远程链接后，原本地文件的处理方式。",

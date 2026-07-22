@@ -34,12 +34,18 @@ export function renderPathTemplate(
     .replace(/^\/+/, "");
 }
 
-export function buildPublicUrl(domain: string, key: string): string {
-  let cleanDomain = String(domain || "").replace(/\/+$/, "");
-  if (cleanDomain && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
-    cleanDomain = `https://${cleanDomain}`;
+export function buildPublicUrl(domain: string, endpoint: string, bucket: string, key: string): string {
+  let base = String(domain || "").replace(/\/+$/, "");
+  if (!base) {
+    let cleanEndpoint = String(endpoint || "").replace(/\/+$/, "");
+    if (cleanEndpoint && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanEndpoint)) {
+       cleanEndpoint = `https://${cleanEndpoint}`;
+    }
+    base = `${cleanEndpoint}/${bucket}`;
+  } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(base)) {
+    base = `https://${base}`;
   }
-  return `${cleanDomain}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  return `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 export function replaceAllLiteral(text: string, search: string, replacement: string): string {

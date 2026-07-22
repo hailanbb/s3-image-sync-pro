@@ -217,6 +217,16 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("autoUploadOnPaste"))
+      .setDesc(t("autoUploadOnPasteDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.autoUploadOnPaste).onChange((value) => {
+          this.plugin.settings.autoUploadOnPaste = value;
+          void save();
+        })
+      );
+
+    new Setting(containerEl)
       .setName(t("deletePolicy"))
       .setDesc(t("deletePolicyDesc"))
       .addDropdown((dropdown) => {

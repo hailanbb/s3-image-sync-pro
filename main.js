@@ -24,96 +24,6 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// node_modules/wasm-feature-detect/dist/esm/index.js
-var esm_exports = {};
-__export(esm_exports, {
-  bigInt: () => bigInt,
-  bulkMemory: () => bulkMemory,
-  exceptions: () => exceptions,
-  exceptionsFinal: () => exceptionsFinal,
-  extendedConst: () => extendedConst,
-  gc: () => gc,
-  jsStringBuiltins: () => jsStringBuiltins,
-  jspi: () => jspi,
-  memory64: () => memory64,
-  multiMemory: () => multiMemory,
-  multiValue: () => multiValue,
-  mutableGlobals: () => mutableGlobals,
-  referenceTypes: () => referenceTypes,
-  relaxedSimd: () => relaxedSimd,
-  saturatedFloatToInt: () => saturatedFloatToInt,
-  signExtensions: () => signExtensions,
-  simd: () => simd,
-  streamingCompilation: () => streamingCompilation,
-  tailCall: () => tailCall,
-  threads: () => threads,
-  typeReflection: () => typeReflection,
-  typedFunctionReferences: () => typedFunctionReferences
-});
-var bigInt, bulkMemory, exceptions, exceptionsFinal, extendedConst, gc, jsStringBuiltins, jspi, memory64, multiMemory, multiValue, mutableGlobals, referenceTypes, relaxedSimd, saturatedFloatToInt, signExtensions, simd, streamingCompilation, tailCall, threads, typeReflection, typedFunctionReferences;
-var init_esm = __esm({
-  "node_modules/wasm-feature-detect/dist/esm/index.js"() {
-    bigInt = () => (async (e) => {
-      try {
-        return (await WebAssembly.instantiate(e)).instance.exports.b(BigInt(0)) === BigInt(0);
-      } catch (e2) {
-        return false;
-      }
-    })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 126, 3, 2, 1, 0, 7, 5, 1, 1, 98, 0, 0, 10, 6, 1, 4, 0, 32, 0, 11]));
-    bulkMemory = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 3, 1, 0, 1, 10, 14, 1, 12, 0, 65, 0, 65, 0, 65, 0, 252, 10, 0, 0, 11]));
-    exceptions = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 6, 64, 25, 11, 11]));
-    exceptionsFinal = () => (async () => {
-      try {
-        return new WebAssembly.Module(Uint8Array.from(atob("AGFzbQEAAAABBAFgAAADAgEAChABDgACaR9AAQMAAAsACxoL"), (e) => e.codePointAt(0))), true;
-      } catch (e) {
-        return false;
-      }
-    })();
-    extendedConst = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 0, 1, 11, 9, 1, 0, 65, 1, 65, 2, 106, 11, 0]));
-    gc = () => (async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 95, 1, 120, 0])))();
-    jsStringBuiltins = () => (async () => {
-      try {
-        return await WebAssembly.instantiate(Uint8Array.from(atob("AGFzbQEAAAABBgFgAW8BfwIXAQ53YXNtOmpzLXN0cmluZwR0ZXN0AAA="), (e) => e.codePointAt(0)), {}, { builtins: ["js-string"] }), true;
-      } catch (e) {
-        return false;
-      }
-    })();
-    jspi = () => (async () => "Suspending" in WebAssembly)();
-    memory64 = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 3, 1, 4, 1]));
-    multiMemory = () => (async () => {
-      try {
-        return new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 5, 5, 2, 0, 0, 0, 0])), true;
-      } catch (e) {
-        return false;
-      }
-    })();
-    multiValue = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 0, 2, 127, 127, 3, 2, 1, 0, 10, 8, 1, 6, 0, 65, 0, 65, 0, 11]));
-    mutableGlobals = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 2, 8, 1, 1, 97, 1, 98, 3, 127, 1, 6, 6, 1, 127, 1, 65, 0, 11, 7, 5, 1, 1, 97, 3, 1]));
-    referenceTypes = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 7, 1, 5, 0, 208, 112, 26, 11]));
-    relaxedSimd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 15, 1, 13, 0, 65, 1, 253, 15, 65, 2, 253, 15, 253, 128, 2, 11]));
-    saturatedFloatToInt = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 12, 1, 10, 0, 67, 0, 0, 0, 0, 252, 0, 26, 11]));
-    signExtensions = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 8, 1, 6, 0, 65, 0, 192, 26, 11]));
-    simd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
-    streamingCompilation = () => (async () => "compileStreaming" in WebAssembly)();
-    tailCall = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 6, 1, 4, 0, 18, 0, 11]));
-    threads = () => (async (e) => {
-      try {
-        return "undefined" != typeof MessageChannel && new MessageChannel().port1.postMessage(new SharedArrayBuffer(1)), WebAssembly.validate(e);
-      } catch (e2) {
-        return false;
-      }
-    })(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 5, 4, 1, 3, 1, 1, 10, 11, 1, 9, 0, 65, 0, 254, 16, 2, 0, 26, 11]));
-    typeReflection = () => (async () => "Function" in WebAssembly)();
-    typedFunctionReferences = () => (async () => {
-      try {
-        return new WebAssembly.Module(Uint8Array.from(atob("AGFzbQEAAAABEANgAX8Bf2ABZAABf2AAAX8DBAMBAAIJBQEDAAEBChwDCwBBCkEqIAAUAGoLBwAgAEEBagsGANIBEAAL"), (e) => e.codePointAt(0))), true;
-      } catch (e) {
-        return false;
-      }
-    })();
-  }
-});
-
 // node_modules/@jsquash/webp/codec/enc/webp_enc_simd.js
 var webp_enc_simd_exports = {};
 __export(webp_enc_simd_exports, {
@@ -3188,6 +3098,7 @@ var DEFAULT_SETTINGS = {
   webpQuality: 80,
   webpSkipFormats: ["svg", "gif"],
   deleteRemoteOnNoteDelete: false,
+  autoUploadOnPaste: false,
   logs: []
 };
 function isObject(value) {
@@ -3394,12 +3305,18 @@ function renderPathTemplate(template, values) {
   const hashShort = (values.hash || "").slice(0, 32);
   return String(template || "attachments/{ext}/{hash2}/{hash}.{ext}").replace(/\{ext\}/g, values.ext).replace(/\{hash\}/g, values.hash).replace(/\{hash2\}/g, values.hash2).replace(/\{filename\}/g, values.filename).replace(/\{notedir\}/g, values.notedir ? values.notedir.replace(/[\\:*?"<>|]+/g, "-") : "").replace(/\{notename\}/g, values.notename ? values.notename.replace(/[\\/:*?"<>|#%]+/g, "-") : "").replace(/\{hash-short\}/g, hashShort).replace(/\{yyyy\}/g, yyyy).replace(/\{MM\}/g, MM).replace(/\{dd\}/g, dd).replace(/^\/+/, "");
 }
-function buildPublicUrl(domain, key) {
-  let cleanDomain = String(domain || "").replace(/\/+$/, "");
-  if (cleanDomain && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
-    cleanDomain = `https://${cleanDomain}`;
+function buildPublicUrl(domain, endpoint, bucket, key) {
+  let base = String(domain || "").replace(/\/+$/, "");
+  if (!base) {
+    let cleanEndpoint = String(endpoint || "").replace(/\/+$/, "");
+    if (cleanEndpoint && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanEndpoint)) {
+      cleanEndpoint = `https://${cleanEndpoint}`;
+    }
+    base = `${cleanEndpoint}/${bucket}`;
+  } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(base)) {
+    base = `https://${base}`;
   }
-  return `${cleanDomain}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  return `${base}/${key.split("/").map(encodeURIComponent).join("/")}`;
 }
 function replaceAllLiteral(text, search, replacement) {
   return text.split(search).join(replacement);
@@ -3732,6 +3649,8 @@ var I18N = {
     pluginEnabledDesc: "Turn on/off the scanning and replacement features.",
     mobileHint: "Note: Scheduled auto-scan and delayed delete are disabled on mobile devices. Manual upload and replacement work normally.",
     attachmentRoot: "Image folder",
+    autoUploadOnPaste: "Auto upload on paste / drop",
+    autoUploadOnPasteDesc: "Automatically intercept images pasted or dropped into the editor, upload them to S3 in the background, and insert the remote URL directly. (No local files will be saved).",
     attachmentRootDesc: "Only files under this folder will be processed. Default: 99 Attachments",
     deletePolicy: "After replacing links, delete local files?",
     deletePolicyDesc: "Choose what happens to the original local files after they are replaced with remote URLs.",
@@ -3873,6 +3792,8 @@ var I18N = {
     pluginEnabledDesc: "\u5F00\u542F\u6216\u5173\u95ED\u626B\u63CF\u548C\u66FF\u6362\u529F\u80FD\u3002",
     mobileHint: "\u63D0\u793A\uFF1A\u79FB\u52A8\u7AEF\u4E0D\u652F\u6301\u5B9A\u65F6\u81EA\u52A8\u626B\u63CF\u548C\u5EF6\u8FDF\u5220\u9664\u3002\u624B\u52A8\u4E0A\u4F20\u548C\u66FF\u6362\u529F\u80FD\u6B63\u5E38\u4F7F\u7528\u3002",
     attachmentRoot: "\u56FE\u7247\u6587\u4EF6\u5939",
+    autoUploadOnPaste: "\u7C98\u8D34/\u62D6\u62FD\u56FE\u7247\u81EA\u52A8\u4E0A\u4F20",
+    autoUploadOnPasteDesc: "\u5F00\u542F\u540E\uFF0C\u76F4\u63A5\u5728\u7F16\u8F91\u5668\u4E2D\u7C98\u8D34\u6216\u62D6\u62FD\u7684\u56FE\u7247\u5C06\u88AB\u65E0\u611F\u62E6\u622A\uFF0C\u76F4\u63A5\u540E\u53F0\u4E0A\u4F20\u81F3 S3 \u5E76\u66FF\u6362\u4E3A\u4E91\u7AEF\u94FE\u63A5\uFF08\u672C\u5730\u4E0D\u518D\u4FDD\u5B58\u539F\u56FE\u5783\u573E\uFF09\u3002",
     attachmentRootDesc: "\u53EA\u5904\u7406\u6B64\u6587\u4EF6\u5939\u4E0B\u7684\u56FE\u7247\u3002\u9ED8\u8BA4\uFF1A90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6",
     deletePolicy: "\u66FF\u6362\u94FE\u63A5\u540E\uFF0C\u662F\u5426\u5220\u9664\u672C\u5730\u6587\u4EF6\uFF1F",
     deletePolicyDesc: "\u9009\u62E9\u66FF\u6362\u4E3A\u8FDC\u7A0B\u94FE\u63A5\u540E\uFF0C\u539F\u672C\u5730\u6587\u4EF6\u7684\u5904\u7406\u65B9\u5F0F\u3002",
@@ -4255,8 +4176,10 @@ function initEmscriptenModule(moduleFactory, wasmModule, moduleOptionOverrides =
   });
 }
 
+// node_modules/wasm-feature-detect/dist/esm/index.js
+var simd = async () => WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11]));
+
 // node_modules/@jsquash/webp/encode.js
-init_esm();
 var emscriptenModule;
 async function init(module2, moduleOptionOverrides) {
   let actualModule = module2;
@@ -4301,10 +4224,7 @@ async function ensureWasmInit() {
   if (wasmInitialized)
     return;
   try {
-    const { simd: simd2 } = await Promise.resolve().then(() => (init_esm(), esm_exports));
-    const hasSIMD = await simd2();
-    const wasmFile = hasSIMD ? "webp_enc_simd.wasm" : "webp_enc.wasm";
-    const wasmModule = await loadWasmModule(wasmFile);
+    const wasmModule = await loadWasmModule("webp_enc.wasm");
     await init(wasmModule);
     wasmInitialized = true;
   } catch (e) {
@@ -4503,6 +4423,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     new import_obsidian4.Setting(containerEl).setName(t2("attachmentRoot")).setDesc(t2("attachmentRootDesc")).addText(
       (text) => text.setValue(this.plugin.settings.attachmentRoot).onChange((value) => {
         this.plugin.settings.attachmentRoot = value.trim() || "90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6";
+        void save();
+      })
+    );
+    new import_obsidian4.Setting(containerEl).setName(t2("autoUploadOnPaste")).setDesc(t2("autoUploadOnPasteDesc")).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.autoUploadOnPaste).onChange((value) => {
+        this.plugin.settings.autoUploadOnPaste = value;
         void save();
       })
     );
@@ -4838,6 +4764,12 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
         }
       })
     );
+    this.registerEvent(
+      this.app.workspace.on("editor-paste", this.onEditorPaste.bind(this))
+    );
+    this.registerEvent(
+      this.app.workspace.on("editor-drop", this.onEditorDrop.bind(this))
+    );
     if (this.settings.deleteRemoteOnNoteDelete) {
       void this.initRemoteUrlCache();
     }
@@ -5162,11 +5094,10 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
     });
     return { replaced, localFiles };
   }
-  async uploadCandidate(candidate, noteFile) {
-    const binary = await this.app.vault.readBinary(candidate.file);
+  async uploadBuffer(binary, originalName, noteFile) {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
-    let ext = candidate.file.extension.toLowerCase();
+    let ext = (originalName.split(".").pop() || "").toLowerCase();
     let contentType = contentTypeForExt(ext);
     if (this.settings.webpEnabled && !this.settings.webpSkipFormats.includes(ext)) {
       try {
@@ -5179,7 +5110,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
         ext = compressed.ext;
         contentType = compressed.contentType;
       } catch (error) {
-        console.warn(`WebP compression failed for ${candidate.file.name}, uploading original:`, error);
+        console.warn(`WebP compression failed for ${originalName}, uploading original:`, error);
       }
     }
     const noteDir = noteFile?.parent?.path || "";
@@ -5188,7 +5119,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       ext,
       hash,
       hash2: hash.slice(0, 2),
-      filename: safeFilename(candidate.file.name),
+      filename: safeFilename(originalName.replace(/\.[^/.]+$/, "")),
       notedir: noteDir,
       notename: noteName
     });
@@ -5200,7 +5131,11 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       (status, text) => this.t("uploadFailed", { status, text }),
       hash
     );
-    return { key, publicUrl: buildPublicUrl(this.settings.s3.customDomainName, key) };
+    return { key, publicUrl: buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key) };
+  }
+  async uploadCandidate(candidate, noteFile) {
+    const binary = await this.app.vault.readBinary(candidate.file);
+    return this.uploadBuffer(binary, candidate.file.name, noteFile);
   }
   buildReplacement(ref, candidate, publicUrl) {
     const encodedBase = encodeURI(publicUrl);

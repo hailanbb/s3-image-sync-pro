@@ -35,6 +35,7 @@ export interface PluginSettings {
   webpQuality: number;
   webpSkipFormats: string[];
   deleteRemoteOnNoteDelete: boolean;
+  autoUploadOnPaste: boolean;
   logs: LogEntry[];
 }
 

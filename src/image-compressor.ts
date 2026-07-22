@@ -36,15 +36,11 @@ async function loadWasmModule(filename: string): Promise<WebAssembly.Module> {
 
 /**
  * Initialize WASM modules (lazy, once).
- * Uses wasm-feature-detect to choose SIMD or non-SIMD encoder.
  */
 async function ensureWasmInit(): Promise<void> {
   if (wasmInitialized) return;
   try {
-    const { simd } = await import("wasm-feature-detect");
-    const hasSIMD = await simd();
-    const wasmFile = hasSIMD ? "webp_enc_simd.wasm" : "webp_enc.wasm";
-    const wasmModule = await loadWasmModule(wasmFile);
+    const wasmModule = await loadWasmModule("webp_enc.wasm");
     await initWebpEnc(wasmModule);
     wasmInitialized = true;
   } catch (e) {
