@@ -1,10 +1,10 @@
 {
-  "id": "images-uploader",
-  "name": "S3 Image Sync",
-  "version": "1.0.10",
+  "id": "s3-image-sync-pro",
+  "name": "S3 Image Sync Pro",
+  "version": "1.1.0",
   "minAppVersion": "1.6.6",
-  "description": "Scan local note images, upload to S3-compatible storage (R2/AWS S3/MinIO), and replace links safely.",
-  "author": "JongChoiYip",
-  "authorUrl": "https://github.com/JongChoiYip",
+  "description": "Upload images to S3/R2 with note-path matching, WebP WASM compression, and auto-delete sync.",
+  "author": "hailanbb",
+  "authorUrl": "https://github.com/hailanbb",
   "isDesktopOnly": false
 }

@@ -1,14 +1,14 @@
 {
-  "name": "s3-image-sync",
-  "version": "1.0.10",
-  "description": "Scan local note images, upload to S3-compatible storage (R2/AWS S3/MinIO), and replace links safely.",
+  "name": "s3-image-sync-pro",
+  "version": "1.1.0",
+  "description": "Upload images to S3/R2 with note-path matching, WebP WASM compression, and auto-delete sync.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production"
   },
   "keywords": [],
-  "author": "JongChoiYip",
+  "author": "hailanbb",
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.11.0",
