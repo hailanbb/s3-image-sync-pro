@@ -3983,12 +3983,7 @@ var CandidateModal = class extends import_obsidian2.Modal {
       this.cardMap.set(path, card);
       const previewArea = card.createDiv({ cls: "attachment-imagebed-manager-gallery-preview" });
       const checkIcon = previewArea.createDiv({ cls: "attachment-imagebed-manager-gallery-check" });
-      const svg = activeDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", "0 0 24 24");
-      const svgPath = activeDocument.createElementNS("http://www.w3.org/2000/svg", "path");
-      svgPath.setAttribute("d", "M20 6L9 17l-5-5");
-      svg.appendChild(svgPath);
-      checkIcon.appendChild(svg);
+      checkIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>';
       if (isPreviewableImage(candidate.file.extension)) {
         const image = previewArea.createEl("img");
         image.src = this.app.vault.getResourcePath(candidate.file);
@@ -4292,15 +4287,14 @@ async function encode(data, options = {}) {
 
 // src/image-compressor.ts
 var wasmInitialized = false;
-var pluginDir = "";
-function setPluginDir(dir) {
-  pluginDir = dir;
+function setWasmLoader(loader) {
+  wasmLoader = loader;
 }
+var wasmLoader = null;
 async function loadWasmModule(filename) {
-  const path = require("path");
-  const fs = require("fs");
-  const wasmPath = path.join(pluginDir, filename);
-  const buffer = fs.readFileSync(wasmPath);
+  if (!wasmLoader)
+    throw new Error("WASM loader not set");
+  const buffer = await wasmLoader(filename);
   return WebAssembly.compile(buffer);
 }
 async function ensureWasmInit() {
@@ -4372,6 +4366,10 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+  // Suppress warning for not implementing declarative settings API yet
+  getSettingDefinitions() {
+    return [];
   }
   display() {
     this.renderSettings();
@@ -4454,12 +4452,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         });
       });
     }
-    const descFragment = activeDocument.createDocumentFragment();
-    t2("pathTemplateDesc").split("\n").forEach((line, idx) => {
-      if (idx > 0) {
-        descFragment.appendChild(activeDocument.createElement("br"));
-      }
-      descFragment.appendChild(activeDocument.createTextNode(line));
+    const descFragment = createFragment((frag) => {
+      t2("pathTemplateDesc").split("\n").forEach((line, idx) => {
+        if (idx > 0)
+          frag.createEl("br");
+        frag.appendText(line);
+      });
     });
     new import_obsidian4.Setting(containerEl).setName(t2("objectPathTemplate")).setDesc(descFragment).addText(
       (text) => text.setPlaceholder("attachments/{ext}/{hash2}/{hash}.{ext}").setValue(String(this.plugin.settings.s3.pathTemplate || "")).onChange((value) => {
@@ -4794,8 +4792,9 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
     await this.loadSettings();
     this.locale = detectLocaleFromApp(import_obsidian5.getLanguage);
     this.isMobile = import_obsidian5.Platform.isMobile;
-    const pluginDir2 = this.app.vault.adapter.getBasePath() + "/" + this.manifest.dir;
-    setPluginDir(pluginDir2);
+    setWasmLoader(async (filename) => {
+      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
+    });
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
       void this.scanCurrentNote();
     });
@@ -5179,9 +5178,6 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
         body = compressed.body;
         ext = compressed.ext;
         contentType = compressed.contentType;
-        console.log(
-          `WebP compression: ${candidate.file.name} ${compressed.originalSize} -> ${compressed.compressedSize} bytes`
-        );
       } catch (error) {
         console.warn(`WebP compression failed for ${candidate.file.name}, uploading original:`, error);
       }
@@ -5325,10 +5321,11 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       throw new Error(this.t("missingS3", { settings: missing.join(", ") }));
   }
   addLog(entry) {
-    this.settings.logs.unshift({
-      time: (/* @__PURE__ */ new Date()).toISOString(),
-      ...entry
-    });
+    let obj = {
+      time: (/* @__PURE__ */ new Date()).toLocaleTimeString()
+    };
+    Object.assign(obj, entry);
+    this.settings.logs.unshift(obj);
     this.settings.logs = this.settings.logs.slice(0, 100);
   }
   extractRemoteUrls(text) {

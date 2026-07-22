@@ -18,24 +18,19 @@ export interface CompressResult {
 }
 
 let wasmInitialized = false;
-let pluginDir = "";
 
-/**
- * Set the plugin's installation directory so WASM files can be located.
- * Must be called once before any compression calls.
- */
-export function setPluginDir(dir: string): void {
-  pluginDir = dir;
+export function setWasmLoader(loader: (filename: string) => Promise<ArrayBuffer>): void {
+  wasmLoader = loader;
 }
 
+let wasmLoader: ((filename: string) => Promise<ArrayBuffer>) | null = null;
+
 /**
- * Load WASM binary from the plugin directory using Node.js fs.
+ * Load WASM binary using the injected loader.
  */
 async function loadWasmModule(filename: string): Promise<WebAssembly.Module> {
-  const path = require("path");
-  const fs = require("fs");
-  const wasmPath = path.join(pluginDir, filename);
-  const buffer: Buffer = fs.readFileSync(wasmPath);
+  if (!wasmLoader) throw new Error("WASM loader not set");
+  const buffer = await wasmLoader(filename);
   return WebAssembly.compile(buffer);
 }
 

@@ -63,12 +63,7 @@ export class CandidateModal extends Modal {
       
       // Custom Checkbox Indicator overlay on top-left of image preview
       const checkIcon = previewArea.createDiv({ cls: "attachment-imagebed-manager-gallery-check" });
-      const svg = activeDocument.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", "0 0 24 24");
-      const svgPath = activeDocument.createElementNS("http://www.w3.org/2000/svg", "path");
-      svgPath.setAttribute("d", "M20 6L9 17l-5-5");
-      svg.appendChild(svgPath);
-      checkIcon.appendChild(svg);
+      checkIcon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>';
 
       if (isPreviewableImage(candidate.file.extension)) {
         const image = previewArea.createEl("img");

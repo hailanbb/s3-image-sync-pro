@@ -28,7 +28,7 @@ import {
 import { detectLocaleFromApp, t as translate } from "./i18n";
 import { CandidateModal } from "./candidate-modal";
 import { DryRunModal } from "./dry-run-modal";
-import { compressToWebp, setPluginDir } from "./image-compressor";
+import { compressToWebp, setWasmLoader } from "./image-compressor";
 import { S3ImageSyncSettingTab } from "./settings-tab";
 
 export default class S3ImageSyncPlugin extends Plugin {
@@ -44,9 +44,9 @@ export default class S3ImageSyncPlugin extends Plugin {
     this.isMobile = Platform.isMobile;
 
     // Initialize WASM file path for image compression
-    const pluginDir = (this.app.vault.adapter as any).getBasePath() +
-      "/" + this.manifest.dir;
-    setPluginDir(pluginDir);
+    setWasmLoader(async (filename: string) => {
+      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
+    });
 
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
       void this.scanCurrentNote();
@@ -449,9 +449,6 @@ export default class S3ImageSyncPlugin extends Plugin {
         body = compressed.body;
         ext = compressed.ext;
         contentType = compressed.contentType;
-        console.log(
-          `WebP compression: ${candidate.file.name} ${compressed.originalSize} -> ${compressed.compressedSize} bytes`
-        );
       } catch (error) {
         console.warn(`WebP compression failed for ${candidate.file.name}, uploading original:`, error);
       }
@@ -611,10 +608,11 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   addLog(entry: Omit<LogEntry, "time"> & { time?: string }): void {
-    this.settings.logs.unshift({
-      time: new Date().toISOString(),
-      ...entry,
-    } as LogEntry);
+    let obj = {
+      time: new Date().toLocaleTimeString(),
+    } as LogEntry;
+    Object.assign(obj, entry);
+    this.settings.logs.unshift(obj);
     this.settings.logs = this.settings.logs.slice(0, 100);
   }
 

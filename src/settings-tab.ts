@@ -20,6 +20,11 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // Suppress warning for not implementing declarative settings API yet
+  getSettingDefinitions() {
+    return [];
+  }
+
   display(): void {
     this.renderSettings();
   }
@@ -134,15 +139,14 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         });
     }
 
-    const descFragment = activeDocument.createDocumentFragment();
-    t("pathTemplateDesc")
-      .split("\n")
-      .forEach((line, idx) => {
-        if (idx > 0) {
-          descFragment.appendChild(activeDocument.createElement("br"));
-        }
-        descFragment.appendChild(activeDocument.createTextNode(line));
-      });
+    const descFragment = createFragment((frag) => {
+      t("pathTemplateDesc")
+        .split("\n")
+        .forEach((line, idx) => {
+          if (idx > 0) frag.createEl("br");
+          frag.appendText(line);
+        });
+    });
 
     new Setting(containerEl)
       .setName(t("objectPathTemplate"))
