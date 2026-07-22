@@ -3405,11 +3405,14 @@ async function putS3Object(config, key, body, contentType, formatError, precompu
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
   const region = config.region || "auto";
+  const safeBody = new Uint8Array(body.length);
+  safeBody.set(body);
+  const safeBuffer = safeBody.buffer;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const now = /* @__PURE__ */ new Date();
     const amzDate = toAmzDate(now);
     const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = precomputedHash || await sha256Hex(body);
+    const payloadHash = precomputedHash || await sha256Hex(safeBody);
     const canonicalHeaders = [
       `host:${parsed.host}`,
       `x-amz-content-sha256:${payloadHash}`,
@@ -3450,7 +3453,7 @@ async function putS3Object(config, key, body, contentType, formatError, precompu
         url,
         method: "PUT",
         headers,
-        body: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+        body: safeBuffer,
         throw: false
       });
       if (response.status >= 200 && response.status < 300)

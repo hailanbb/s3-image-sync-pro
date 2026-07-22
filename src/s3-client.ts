@@ -29,11 +29,18 @@ export async function putS3Object(
   const parsed = new URL(url);
   const region = config.region || "auto";
 
+  // CRITICAL FIX: Ensure the body is a pure V8 ArrayBuffer before it's passed to Electron IPC via requestUrl.
+  // WASM-backed ArrayBuffers can cause structured clone / serialization issues over IPC, leading to corrupted 
+  // uploads and XAmzContentSHA256Mismatch errors.
+  const safeBody = new Uint8Array(body.length);
+  safeBody.set(body);
+  const safeBuffer = safeBody.buffer;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const now = new Date();
     const amzDate = toAmzDate(now);
     const dateStamp = amzDate.slice(0, 8);
-    const payloadHash = precomputedHash || await sha256Hex(body);
+    const payloadHash = precomputedHash || await sha256Hex(safeBody);
 
     const canonicalHeaders =
       [
@@ -81,7 +88,7 @@ export async function putS3Object(
         url,
         method: "PUT",
         headers,
-        body: body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+        body: safeBuffer,
         throw: false,
       });
 
