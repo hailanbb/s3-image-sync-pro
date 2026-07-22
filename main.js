@@ -7,6 +7,7 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -23,6 +24,10 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __publicField = (obj, key, value) => {
+  __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+  return value;
+};
 
 // node_modules/@jsquash/webp/codec/enc/webp_enc_simd.js
 var webp_enc_simd_exports = {};
@@ -3861,17 +3866,17 @@ function t(locale, key, params = {}) {
 // src/candidate-modal.ts
 var import_obsidian2 = require("obsidian");
 var CandidateModal = class extends import_obsidian2.Modal {
-  plugin;
-  noteFile;
-  candidates;
-  selected;
-  // UI Elements for efficient updates
-  selectAllCb = null;
-  cardMap = /* @__PURE__ */ new Map();
-  progressFill = null;
-  progressText = null;
   constructor(app, plugin, noteFile, candidates) {
     super(app);
+    __publicField(this, "plugin");
+    __publicField(this, "noteFile");
+    __publicField(this, "candidates");
+    __publicField(this, "selected");
+    // UI Elements for efficient updates
+    __publicField(this, "selectAllCb", null);
+    __publicField(this, "cardMap", /* @__PURE__ */ new Map());
+    __publicField(this, "progressFill", null);
+    __publicField(this, "progressText", null);
     this.plugin = plugin;
     this.noteFile = noteFile;
     this.candidates = candidates;
@@ -4103,11 +4108,11 @@ var CandidateModal = class extends import_obsidian2.Modal {
 // src/dry-run-modal.ts
 var import_obsidian3 = require("obsidian");
 var DryRunModal = class extends import_obsidian3.Modal {
-  plugin;
-  count;
-  samples;
   constructor(app, plugin, count, samples) {
     super(app);
+    __publicField(this, "plugin");
+    __publicField(this, "count");
+    __publicField(this, "samples");
     this.plugin = plugin;
     this.count = count;
     this.samples = samples;
@@ -4282,9 +4287,9 @@ var CATEGORY_ICONS = {
   document: "\u{1F4C4}"
 };
 var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
-  plugin;
   constructor(app, plugin) {
     super(app, plugin);
+    __publicField(this, "plugin");
     this.plugin = plugin;
   }
   // Suppress warning for not implementing declarative settings API yet
@@ -4710,10 +4715,13 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
 
 // src/plugin.ts
 var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
-  locale;
-  autoScanTimer = null;
-  isMobile = false;
-  noteRemoteUrls = /* @__PURE__ */ new Map();
+  constructor() {
+    super(...arguments);
+    __publicField(this, "locale");
+    __publicField(this, "autoScanTimer", null);
+    __publicField(this, "isMobile", false);
+    __publicField(this, "noteRemoteUrls", /* @__PURE__ */ new Map());
+  }
   async onload() {
     await this.loadSettings();
     this.locale = detectLocaleFromApp(import_obsidian5.getLanguage);
@@ -5340,6 +5348,67 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       }
     }
     await this.saveSettings();
+  }
+  async onEditorPaste(evt, editor, info) {
+    if (!this.settings.enabled || !this.settings.autoUploadOnPaste)
+      return;
+    const files = Array.from(evt.clipboardData?.files || []);
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0)
+      return;
+    evt.preventDefault();
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new import_obsidian5.Notice(this.t("missingS3", { settings: e.message }));
+      return;
+    }
+    await this.handlePastedImages(images, editor, info.file);
+  }
+  async onEditorDrop(evt, editor, info) {
+    if (!this.settings.enabled || !this.settings.autoUploadOnPaste)
+      return;
+    const files = Array.from(evt.dataTransfer?.files || []);
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0)
+      return;
+    evt.preventDefault();
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new import_obsidian5.Notice(this.t("missingS3", { settings: e.message }));
+      return;
+    }
+    await this.handlePastedImages(images, editor, info.file);
+  }
+  async handlePastedImages(images, editor, noteFile) {
+    for (const file of images) {
+      const placeholderId = Math.random().toString(36).substring(2, 8);
+      const originalName = file.name || "image.png";
+      const placeholder = `![Uploading ${originalName} ${placeholderId}...]()`;
+      editor.replaceSelection(placeholder + "\n");
+      try {
+        const buffer = await file.arrayBuffer();
+        const result = await this.uploadBuffer(buffer, originalName, noteFile || void 0);
+        const replacement = `![${escapeMarkdownLabel(originalName)}](${encodeURI(result.publicUrl)})`;
+        for (let i = 0; i < editor.lineCount(); i++) {
+          const line = editor.getLine(i);
+          if (line.includes(placeholder)) {
+            editor.setLine(i, replaceAllLiteral(line, placeholder, replacement));
+            break;
+          }
+        }
+      } catch (error) {
+        new import_obsidian5.Notice(`Failed to upload ${originalName}: ${error instanceof Error ? error.message : String(error)}`);
+        for (let i = 0; i < editor.lineCount(); i++) {
+          const line = editor.getLine(i);
+          if (line.includes(placeholder)) {
+            editor.setLine(i, replaceAllLiteral(line, placeholder, `![Failed to upload ${originalName}]()`));
+            break;
+          }
+        }
+      }
+    }
   }
 };
 

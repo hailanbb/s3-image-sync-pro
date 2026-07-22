@@ -706,4 +706,70 @@ export default class S3ImageSyncPlugin extends Plugin {
     }
     await this.saveSettings();
   }
+
+  private async onEditorPaste(evt: ClipboardEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> {
+    if (!this.settings.enabled || !this.settings.autoUploadOnPaste) return;
+    
+    const files = Array.from(evt.clipboardData?.files || []);
+    const images = files.filter(f => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    evt.preventDefault();
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new Notice(this.t("missingS3", { settings: (e as Error).message }));
+      return;
+    }
+    await this.handlePastedImages(images, editor, info.file);
+  }
+
+  private async onEditorDrop(evt: DragEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> {
+    if (!this.settings.enabled || !this.settings.autoUploadOnPaste) return;
+    
+    const files = Array.from(evt.dataTransfer?.files || []);
+    const images = files.filter(f => f.type.startsWith("image/"));
+    if (images.length === 0) return;
+
+    evt.preventDefault();
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new Notice(this.t("missingS3", { settings: (e as Error).message }));
+      return;
+    }
+    await this.handlePastedImages(images, editor, info.file);
+  }
+
+  private async handlePastedImages(images: File[], editor: Editor, noteFile: TFile | null): Promise<void> {
+    for (const file of images) {
+      const placeholderId = Math.random().toString(36).substring(2, 8);
+      const originalName = file.name || "image.png";
+      const placeholder = `![Uploading ${originalName} ${placeholderId}...]()`;
+      editor.replaceSelection(placeholder + "\n");
+      
+      try {
+        const buffer = await file.arrayBuffer();
+        const result = await this.uploadBuffer(buffer, originalName, noteFile || undefined);
+        const replacement = `![${escapeMarkdownLabel(originalName)}](${encodeURI(result.publicUrl)})`;
+        
+        for (let i = 0; i < editor.lineCount(); i++) {
+          const line = editor.getLine(i);
+          if (line.includes(placeholder)) {
+            editor.setLine(i, replaceAllLiteral(line, placeholder, replacement));
+            break;
+          }
+        }
+      } catch (error: unknown) {
+        new Notice(`Failed to upload ${originalName}: ${error instanceof Error ? error.message : String(error)}`);
+        for (let i = 0; i < editor.lineCount(); i++) {
+          const line = editor.getLine(i);
+          if (line.includes(placeholder)) {
+            editor.setLine(i, replaceAllLiteral(line, placeholder, `![Failed to upload ${originalName}]()`));
+            break;
+          }
+        }
+      }
+    }
+  }
 }
