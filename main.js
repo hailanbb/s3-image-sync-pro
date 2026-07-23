@@ -5214,9 +5214,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         label: noteFile.name
       });
       await this.app.vault.process(noteFile, (current) => {
-        if (current !== originalText) {
-          throw new Error(this.t("noteChanged"));
-        }
         let next = current;
         for (const [raw, replacement] of replacementMap.entries()) {
           if (!next.includes(raw)) {
@@ -5702,9 +5699,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       label: noteFile.name
     });
     await this.app.vault.process(noteFile, (current) => {
-      if (current !== originalText) {
-        throw new Error(this.t("noteChanged"));
-      }
       let next = current;
       for (const [raw, replacement] of replacementMap.entries()) {
         if (next.includes(raw)) {

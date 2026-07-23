@@ -404,9 +404,6 @@ export default class S3ImageSyncPlugin extends Plugin {
       });
 
       await this.app.vault.process(noteFile, (current) => {
-        if (current !== originalText) {
-          throw new Error(this.t("noteChanged"));
-        }
         let next = current;
         for (const [raw, replacement] of replacementMap.entries()) {
           if (!next.includes(raw)) {
@@ -951,9 +948,6 @@ export default class S3ImageSyncPlugin extends Plugin {
     });
 
     await this.app.vault.process(noteFile, (current) => {
-      if (current !== originalText) {
-        throw new Error(this.t("noteChanged"));
-      }
       let next = current;
       for (const [raw, replacement] of replacementMap.entries()) {
         if (next.includes(raw)) {
