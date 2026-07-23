@@ -45,6 +45,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   webpSkipFormats: ["svg", "gif"],
   deleteRemoteOnNoteDelete: false,
   autoUploadOnPaste: false,
+  autoTransferRemoteImages: false,
+  remoteImageMaxSizeMiB: 10,
   logs: [],
 };
 

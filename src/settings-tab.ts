@@ -218,6 +218,31 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("autoTransferRemote"))
+      .setDesc(t("autoTransferRemoteDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.autoTransferRemoteImages).onChange((value) => {
+          this.plugin.settings.autoTransferRemoteImages = value;
+          void save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName(t("remoteMaxSize"))
+      .setDesc(t("remoteMaxSizeDesc"))
+      .addText((text) =>
+        text
+          .setValue(String(this.plugin.settings.remoteImageMaxSizeMiB))
+          .onChange((value) => {
+            const num = parseFloat(value);
+            if (!isNaN(num) && num > 0) {
+              this.plugin.settings.remoteImageMaxSizeMiB = num;
+              void save();
+            }
+          })
+      );
+
+    new Setting(containerEl)
       .setName(t("deletePolicy"))
       .setDesc(t("deletePolicyDesc"))
       .addDropdown((dropdown) => {

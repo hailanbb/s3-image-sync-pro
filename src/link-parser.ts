@@ -85,3 +85,50 @@ export function extractLocalRefs(text: string): LocalRef[] {
 
   return refs.sort((a, b) => a.start - b.start);
 }
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "heic", "avif", "ico"]);
+
+export function guessExtFromUrl(url: string): string {
+  try {
+    const pathname = new URL(url).pathname;
+    const lastDot = pathname.lastIndexOf(".");
+    if (lastDot >= 0) {
+      const ext = pathname.slice(lastDot + 1).toLowerCase().split(/[?#]/)[0];
+      if (ext && ext.length <= 5) return ext;
+    }
+  } catch { /* ignore */ }
+  return "png"; // fallback for extensionless URLs (common in CDNs)
+}
+
+export function isImageUrl(url: string): boolean {
+  const ext = guessExtFromUrl(url);
+  return IMAGE_EXTS.has(ext);
+}
+
+import { RemoteImageRef } from "./types";
+
+export function extractRemoteImageRefs(text: string): RemoteImageRef[] {
+  const refs: RemoteImageRef[] = [];
+  const codeRegions = findCodeRegions(text);
+
+  // Match ![alt](https://...) — standard markdown image embeds with http(s) URLs
+  const mdImg = /!\[([^\]\n]*)\]\((https?:\/\/[^)\n]+)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = mdImg.exec(text)) !== null) {
+    if (isInCodeRegion(match.index, codeRegions)) continue;
+    const raw = match[0];
+    const alt = match[1];
+    const url = match[2].trim();
+    // Only include URLs that look like images
+    if (!isImageUrl(url)) continue;
+    refs.push({
+      raw,
+      start: match.index,
+      end: match.index + raw.length,
+      url,
+      alt,
+    });
+  }
+
+  return refs.sort((a, b) => a.start - b.start);
+}

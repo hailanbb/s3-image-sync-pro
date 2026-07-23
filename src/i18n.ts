@@ -164,6 +164,20 @@ export const I18N: Record<string, Record<string, string>> = {
     recentLog: "Recent activity",
     pendingDeletes: "Pending delayed deletes",
     noLogs: "No activity yet. Scan a note to get started.",
+
+    // Remote image transfer
+    remoteImageFound: "Found {count} remote image(s) that can be transferred to S3.",
+    downloading: "Downloading",
+    downloadFailed: "Download failed: {error}",
+    remoteImageSkipped: "Skipped (already on S3)",
+    remoteImageTooLarge: "Skipped (exceeds {max} MiB limit)",
+    autoTransferRemote: "Auto-transfer remote images",
+    autoTransferRemoteDesc: "When a note contains external image URLs (e.g. from Web Clipper), automatically download, compress and upload them to S3 in the background.",
+    remoteMaxSize: "Max download size per image (MiB)",
+    remoteMaxSizeDesc: "Skip remote images larger than this size. Default: 10 MiB.",
+    noCandidatesEither: "No local or remote images found in this note.",
+    remoteTransferNotice: "Transferred {count} remote image(s) to S3.",
+    downloadRetrying: "Download failed, retrying ({attempt}/{max})...",
   },
   zh: {
     // Ribbon & Commands
@@ -329,6 +343,20 @@ export const I18N: Record<string, Record<string, string>> = {
     recentLog: "最近活动",
     pendingDeletes: "待延迟删除",
     noLogs: "暂无活动记录。扫描一篇文档即可开始。",
+
+    // 远程图片转存
+    remoteImageFound: "发现 {count} 张可转存的网络图片。",
+    downloading: "正在下载",
+    downloadFailed: "下载失败：{error}",
+    remoteImageSkipped: "已跳过（已在 S3 上）",
+    remoteImageTooLarge: "已跳过（超过 {max} MiB 限制）",
+    autoTransferRemote: "自动转存网络图片",
+    autoTransferRemoteDesc: "检测到笔记中引用了外部网络图片（如 Web Clipper 剪藏）时，自动在后台下载、压缩并转存至 S3。",
+    remoteMaxSize: "单张图片最大下载体积（MiB）",
+    remoteMaxSizeDesc: "超过此大小的远程图片将被跳过。默认：10 MiB。",
+    noCandidatesEither: "当前文档没有可处理的本地或网络图片。",
+    remoteTransferNotice: "已将 {count} 张网络图片转存至 S3。",
+    downloadRetrying: "下载失败，正在重试（{attempt}/{max}）...",
   },
 };
 

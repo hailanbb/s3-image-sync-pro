@@ -7,12 +7,14 @@ import {
   LogEntry,
   PluginSettings,
   ProgressState,
+  RemoteCandidate,
+  RemoteImageRef,
   ReplaceResult,
   ScanOptions,
   UploadResult,
 } from "./types";
 import { DEFAULT_SETTINGS, getReplacementForExt, mergeSettings } from "./settings";
-import { extractLocalRefs } from "./link-parser";
+import { extractLocalRefs, extractRemoteImageRefs, guessExtFromUrl } from "./link-parser";
 import { putS3Object, deleteS3Object } from "./s3-client";
 import { sha256Hex } from "./crypto";
 import {
@@ -30,6 +32,7 @@ import { CandidateModal } from "./candidate-modal";
 import { DryRunModal } from "./dry-run-modal";
 import { compressToWebp, setWasmLoader } from "./image-compressor";
 import { S3ImageSyncSettingTab } from "./settings-tab";
+import { debounce } from "./utils";
 
 export default class S3ImageSyncPlugin extends Plugin {
   declare settings: PluginSettings;
@@ -108,6 +111,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       void this.initRemoteUrlCache();
     }
     this.configureAutoScan();
+    this.configureAutoRemoteTransfer();
   }
 
   onunload(): void {
@@ -165,11 +169,31 @@ export default class S3ImageSyncPlugin extends Plugin {
       enforceSizeRule: false,
       skipExtensionFilter: true,
     });
-    if (candidates.length === 0) {
-      new Notice(this.t("noCandidates"));
+    const remoteCandidates = await this.findRemoteCandidatesInNote(activeFile);
+    if (candidates.length === 0 && remoteCandidates.length === 0) {
+      new Notice(this.t("noCandidatesEither"));
       return;
     }
-    new CandidateModal(this.app, this, activeFile, candidates).open();
+    // If we have remote candidates, handle them automatically (no modal needed for remote)
+    if (remoteCandidates.length > 0) {
+      const notice = new Notice(this.t("remoteImageFound", { count: remoteCandidates.length }), 0);
+      try {
+        const result = await this.transferRemoteImagesInNote(activeFile, remoteCandidates, (state) => {
+          notice.setMessage(`${this.t(state.phase === "downloading" ? "downloading" : state.phase === "uploading" ? "phaseUploading" : state.phase === "rewriting" ? "phaseRewriting" : "phaseDone")} ${state.label} (${state.current}/${state.total})`);
+        });
+        notice.hide();
+        if (result.replaced > 0) {
+          new Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+        }
+      } catch (error) {
+        notice.hide();
+        new Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+    // If we also have local candidates, open the modal for those
+    if (candidates.length > 0) {
+      new CandidateModal(this.app, this, activeFile, candidates).open();
+    }
   }
 
   async scanVaultDryRun(): Promise<void> {
@@ -771,6 +795,225 @@ export default class S3ImageSyncPlugin extends Plugin {
           }
         }
       }
+    }
+  }
+
+  // ─── Remote Image Transfer ───────────────────────────────────────────
+
+  async findRemoteCandidatesInNote(noteFile: TFile): Promise<RemoteCandidate[]> {
+    const text = await this.app.vault.read(noteFile);
+    const refs = extractRemoteImageRefs(text);
+    // Filter out URLs already on our own S3 domain
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    const filtered = refs.filter((ref) => {
+      if (!ownDomain) return true;
+      try {
+        const refHost = new URL(ref.url).origin.toLowerCase();
+        const ownHost = ownDomain.includes("://") ? new URL(ownDomain).origin.toLowerCase() : ownDomain;
+        return !refHost.includes(ownHost.replace(/^https?:\/\//, ""));
+      } catch {
+        return true;
+      }
+    });
+    // Deduplicate by URL
+    const byUrl = new Map<string, RemoteCandidate>();
+    for (const ref of filtered) {
+      const existing = byUrl.get(ref.url);
+      if (existing) {
+        existing.refs.push(ref);
+      } else {
+        byUrl.set(ref.url, {
+          url: ref.url,
+          alt: ref.alt,
+          guessedExt: guessExtFromUrl(ref.url),
+          refs: [ref],
+        });
+      }
+    }
+    return Array.from(byUrl.values());
+  }
+
+  private static readonly DOWNLOAD_MAX_RETRIES = 3;
+  private static readonly DOWNLOAD_BASE_DELAY_MS = 2000;
+
+  async downloadRemoteImage(url: string): Promise<{ buffer: ArrayBuffer; contentType: string }> {
+    const maxBytes = Math.max(0, this.settings.remoteImageMaxSizeMiB || 10) * 1024 * 1024;
+
+    for (let attempt = 0; attempt <= S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES; attempt++) {
+      try {
+        const response = await requestUrl({
+          url,
+          method: "GET",
+          throw: false,
+        });
+
+        if (response.status >= 400) {
+          // Retriable server errors
+          if ((response.status === 429 || response.status >= 500) && attempt < S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES) {
+            new Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+            await new Promise((r) => window.setTimeout(r, S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
+            continue;
+          }
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const contentType = (response.headers["content-type"] || response.headers["Content-Type"] || "").toLowerCase();
+        // Validate it's an image
+        if (!contentType.startsWith("image/") && !contentType.startsWith("application/octet-stream")) {
+          throw new Error(`Not an image (Content-Type: ${contentType})`);
+        }
+
+        const buffer = response.arrayBuffer;
+        if (buffer.byteLength > maxBytes) {
+          throw new Error(this.t("remoteImageTooLarge", { max: this.settings.remoteImageMaxSizeMiB }));
+        }
+
+        return { buffer, contentType };
+      } catch (error: unknown) {
+        // Network errors are retriable
+        if (attempt < S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES) {
+          const isFormattedError = error instanceof Error && (error.message.startsWith("HTTP ") || error.message.startsWith("Not an image") || error.message.includes("MiB"));
+          if (isFormattedError) throw error; // Don't retry non-retriable errors
+          new Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+          await new Promise((r) => window.setTimeout(r, S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error("Download failed after all retries");
+  }
+
+  async transferRemoteImagesInNote(
+    noteFile: TFile,
+    candidates: RemoteCandidate[],
+    progress: ((state: ProgressState) => void) | null = null
+  ): Promise<ReplaceResult> {
+    this.ensureS3Settings();
+    const originalText = await this.app.vault.read(noteFile);
+    const replacementMap = new Map<string, string>();
+    let replaced = 0;
+    const total = candidates.length;
+    let completed = 0;
+
+    for (const candidate of candidates) {
+      progress?.({
+        phase: "downloading",
+        current: completed,
+        total,
+        label: new URL(candidate.url).hostname,
+      });
+
+      try {
+        const { buffer } = await this.downloadRemoteImage(candidate.url);
+        // Derive a filename from the URL for the upload path template
+        const urlPath = new URL(candidate.url).pathname;
+        const urlBasename = urlPath.split("/").pop() || "remote-image";
+        const originalName = decodeURIComponent(urlBasename);
+
+        progress?.({
+          phase: "uploading",
+          current: completed,
+          total,
+          label: originalName,
+        });
+
+        const result = await this.uploadBuffer(buffer, originalName, noteFile);
+        // Build replacement for all refs of this candidate
+        for (const ref of candidate.refs) {
+          const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${result.publicUrl})`;
+          replacementMap.set(ref.raw, newMarkdown);
+        }
+        completed++;
+      } catch (error: unknown) {
+        console.warn(`Failed to transfer remote image ${candidate.url}:`, error);
+        new Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+        completed++;
+        // Continue with other candidates
+      }
+    }
+
+    if (replacementMap.size === 0) return { replaced: 0 };
+
+    progress?.({
+      phase: "rewriting",
+      current: completed,
+      total,
+      label: noteFile.name,
+    });
+
+    await this.app.vault.process(noteFile, (current) => {
+      if (current !== originalText) {
+        throw new Error(this.t("noteChanged"));
+      }
+      let next = current;
+      for (const [raw, replacement] of replacementMap.entries()) {
+        if (next.includes(raw)) {
+          next = replaceAllLiteral(next, raw, replacement);
+          replaced++;
+        }
+      }
+      return next;
+    });
+
+    progress?.({
+      phase: "done",
+      current: total,
+      total,
+      label: this.t("phaseDone"),
+    });
+
+    return { replaced };
+  }
+
+  private remoteTransferDebounceTimers = new Map<string, number>();
+
+  configureAutoRemoteTransfer(): void {
+    if (!this.settings.autoTransferRemoteImages) return;
+    // Listen for note creation (e.g. Web Clipper)
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled) return;
+        // Debounce: wait 5 seconds for the file to settle
+        const existing = this.remoteTransferDebounceTimers.get(file.path);
+        if (existing) window.clearTimeout(existing);
+        const timer = window.setTimeout(() => {
+          this.remoteTransferDebounceTimers.delete(file.path);
+          void this.autoTransferRemoteForFile(file);
+        }, 5000);
+        this.remoteTransferDebounceTimers.set(file.path, timer);
+      })
+    );
+    // Also listen for modify (in case Web Clipper modifies an existing note)
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled) return;
+        const existing = this.remoteTransferDebounceTimers.get(file.path);
+        if (existing) window.clearTimeout(existing);
+        const timer = window.setTimeout(() => {
+          this.remoteTransferDebounceTimers.delete(file.path);
+          void this.autoTransferRemoteForFile(file);
+        }, 5000);
+        this.remoteTransferDebounceTimers.set(file.path, timer);
+      })
+    );
+  }
+
+  private async autoTransferRemoteForFile(file: TFile): Promise<void> {
+    try {
+      this.ensureS3Settings();
+    } catch { return; }
+    try {
+      const candidates = await this.findRemoteCandidatesInNote(file);
+      if (candidates.length === 0) return;
+      const result = await this.transferRemoteImagesInNote(file, candidates);
+      if (result.replaced > 0) {
+        new Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+      }
+    } catch (error) {
+      console.error(`Auto remote transfer failed for ${file.path}:`, error);
     }
   }
 }

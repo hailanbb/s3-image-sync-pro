@@ -36,6 +36,8 @@ export interface PluginSettings {
   webpSkipFormats: string[];
   deleteRemoteOnNoteDelete: boolean;
   autoUploadOnPaste: boolean;
+  autoTransferRemoteImages: boolean;
+  remoteImageMaxSizeMiB: number;
   logs: LogEntry[];
 }
 
@@ -47,6 +49,21 @@ export interface LocalRef {
   target: string;
   fragment: string;
   label: string;
+}
+
+export interface RemoteImageRef {
+  raw: string;
+  start: number;
+  end: number;
+  url: string;
+  alt: string;
+}
+
+export interface RemoteCandidate {
+  url: string;
+  alt: string;
+  guessedExt: string;
+  refs: RemoteImageRef[];
 }
 
 export interface Candidate {
@@ -77,7 +94,7 @@ export interface LogEntry {
 }
 
 export interface ProgressState {
-  phase: "uploading" | "uploaded" | "rewriting" | "trashing" | "scheduling" | "done";
+  phase: "uploading" | "uploaded" | "rewriting" | "trashing" | "scheduling" | "downloading" | "done";
   current: number;
   total: number;
   label: string;

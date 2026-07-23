@@ -3102,6 +3102,8 @@ var DEFAULT_SETTINGS = {
   webpSkipFormats: ["svg", "gif"],
   deleteRemoteOnNoteDelete: false,
   autoUploadOnPaste: false,
+  autoTransferRemoteImages: false,
+  remoteImageMaxSizeMiB: 10,
   logs: []
 };
 function isObject(value) {
@@ -3254,6 +3256,47 @@ function extractLocalRefs(text) {
       target: parsed.path,
       fragment: parsed.fragment,
       label: match[1] || basename(parsed.path)
+    });
+  }
+  return refs.sort((a, b) => a.start - b.start);
+}
+var IMAGE_EXTS = /* @__PURE__ */ new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "tiff", "heic", "avif", "ico"]);
+function guessExtFromUrl(url) {
+  try {
+    const pathname = new URL(url).pathname;
+    const lastDot = pathname.lastIndexOf(".");
+    if (lastDot >= 0) {
+      const ext = pathname.slice(lastDot + 1).toLowerCase().split(/[?#]/)[0];
+      if (ext && ext.length <= 5)
+        return ext;
+    }
+  } catch {
+  }
+  return "png";
+}
+function isImageUrl(url) {
+  const ext = guessExtFromUrl(url);
+  return IMAGE_EXTS.has(ext);
+}
+function extractRemoteImageRefs(text) {
+  const refs = [];
+  const codeRegions = findCodeRegions(text);
+  const mdImg = /!\[([^\]\n]*)\]\((https?:\/\/[^)\n]+)\)/g;
+  let match;
+  while ((match = mdImg.exec(text)) !== null) {
+    if (isInCodeRegion(match.index, codeRegions))
+      continue;
+    const raw = match[0];
+    const alt = match[1];
+    const url = match[2].trim();
+    if (!isImageUrl(url))
+      continue;
+    refs.push({
+      raw,
+      start: match.index,
+      end: match.index + raw.length,
+      url,
+      alt
     });
   }
   return refs.sort((a, b) => a.start - b.start);
@@ -3709,7 +3752,20 @@ var I18N = {
     // Settings - Log
     recentLog: "Recent activity",
     pendingDeletes: "Pending delayed deletes",
-    noLogs: "No activity yet. Scan a note to get started."
+    noLogs: "No activity yet. Scan a note to get started.",
+    // Remote image transfer
+    remoteImageFound: "Found {count} remote image(s) that can be transferred to S3.",
+    downloading: "Downloading",
+    downloadFailed: "Download failed: {error}",
+    remoteImageSkipped: "Skipped (already on S3)",
+    remoteImageTooLarge: "Skipped (exceeds {max} MiB limit)",
+    autoTransferRemote: "Auto-transfer remote images",
+    autoTransferRemoteDesc: "When a note contains external image URLs (e.g. from Web Clipper), automatically download, compress and upload them to S3 in the background.",
+    remoteMaxSize: "Max download size per image (MiB)",
+    remoteMaxSizeDesc: "Skip remote images larger than this size. Default: 10 MiB.",
+    noCandidatesEither: "No local or remote images found in this note.",
+    remoteTransferNotice: "Transferred {count} remote image(s) to S3.",
+    downloadRetrying: "Download failed, retrying ({attempt}/{max})..."
   },
   zh: {
     // Ribbon & Commands
@@ -3852,7 +3908,20 @@ var I18N = {
     // Settings - Log
     recentLog: "\u6700\u8FD1\u6D3B\u52A8",
     pendingDeletes: "\u5F85\u5EF6\u8FDF\u5220\u9664",
-    noLogs: "\u6682\u65E0\u6D3B\u52A8\u8BB0\u5F55\u3002\u626B\u63CF\u4E00\u7BC7\u6587\u6863\u5373\u53EF\u5F00\u59CB\u3002"
+    noLogs: "\u6682\u65E0\u6D3B\u52A8\u8BB0\u5F55\u3002\u626B\u63CF\u4E00\u7BC7\u6587\u6863\u5373\u53EF\u5F00\u59CB\u3002",
+    // 远程图片转存
+    remoteImageFound: "\u53D1\u73B0 {count} \u5F20\u53EF\u8F6C\u5B58\u7684\u7F51\u7EDC\u56FE\u7247\u3002",
+    downloading: "\u6B63\u5728\u4E0B\u8F7D",
+    downloadFailed: "\u4E0B\u8F7D\u5931\u8D25\uFF1A{error}",
+    remoteImageSkipped: "\u5DF2\u8DF3\u8FC7\uFF08\u5DF2\u5728 S3 \u4E0A\uFF09",
+    remoteImageTooLarge: "\u5DF2\u8DF3\u8FC7\uFF08\u8D85\u8FC7 {max} MiB \u9650\u5236\uFF09",
+    autoTransferRemote: "\u81EA\u52A8\u8F6C\u5B58\u7F51\u7EDC\u56FE\u7247",
+    autoTransferRemoteDesc: "\u68C0\u6D4B\u5230\u7B14\u8BB0\u4E2D\u5F15\u7528\u4E86\u5916\u90E8\u7F51\u7EDC\u56FE\u7247\uFF08\u5982 Web Clipper \u526A\u85CF\uFF09\u65F6\uFF0C\u81EA\u52A8\u5728\u540E\u53F0\u4E0B\u8F7D\u3001\u538B\u7F29\u5E76\u8F6C\u5B58\u81F3 S3\u3002",
+    remoteMaxSize: "\u5355\u5F20\u56FE\u7247\u6700\u5927\u4E0B\u8F7D\u4F53\u79EF\uFF08MiB\uFF09",
+    remoteMaxSizeDesc: "\u8D85\u8FC7\u6B64\u5927\u5C0F\u7684\u8FDC\u7A0B\u56FE\u7247\u5C06\u88AB\u8DF3\u8FC7\u3002\u9ED8\u8BA4\uFF1A10 MiB\u3002",
+    noCandidatesEither: "\u5F53\u524D\u6587\u6863\u6CA1\u6709\u53EF\u5904\u7406\u7684\u672C\u5730\u6216\u7F51\u7EDC\u56FE\u7247\u3002",
+    remoteTransferNotice: "\u5DF2\u5C06 {count} \u5F20\u7F51\u7EDC\u56FE\u7247\u8F6C\u5B58\u81F3 S3\u3002",
+    downloadRetrying: "\u4E0B\u8F7D\u5931\u8D25\uFF0C\u6B63\u5728\u91CD\u8BD5\uFF08{attempt}/{max}\uFF09..."
   }
 };
 function detectLocaleFromApp(getLanguage2) {
@@ -4433,6 +4502,21 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         void save();
       })
     );
+    new import_obsidian4.Setting(containerEl).setName(t2("autoTransferRemote")).setDesc(t2("autoTransferRemoteDesc")).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.autoTransferRemoteImages).onChange((value) => {
+        this.plugin.settings.autoTransferRemoteImages = value;
+        void save();
+      })
+    );
+    new import_obsidian4.Setting(containerEl).setName(t2("remoteMaxSize")).setDesc(t2("remoteMaxSizeDesc")).addText(
+      (text) => text.setValue(String(this.plugin.settings.remoteImageMaxSizeMiB)).onChange((value) => {
+        const num = parseFloat(value);
+        if (!isNaN(num) && num > 0) {
+          this.plugin.settings.remoteImageMaxSizeMiB = num;
+          void save();
+        }
+      })
+    );
     new import_obsidian4.Setting(containerEl).setName(t2("deletePolicy")).setDesc(t2("deletePolicyDesc")).addDropdown((dropdown) => {
       dropdown.addOption("confirm", t2("deleteConfirm")).addOption("immediate", t2("deleteImmediate"));
       if (!this.plugin.isMobile) {
@@ -4710,13 +4794,14 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
 };
 
 // src/plugin.ts
-var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
+var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "locale");
     __publicField(this, "autoScanTimer", null);
     __publicField(this, "isMobile", false);
     __publicField(this, "noteRemoteUrls", /* @__PURE__ */ new Map());
+    __publicField(this, "remoteTransferDebounceTimers", /* @__PURE__ */ new Map());
   }
   async onload() {
     await this.loadSettings();
@@ -4778,6 +4863,7 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       void this.initRemoteUrlCache();
     }
     this.configureAutoScan();
+    this.configureAutoRemoteTransfer();
   }
   onunload() {
     if (this.autoScanTimer)
@@ -4833,11 +4919,29 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       enforceSizeRule: false,
       skipExtensionFilter: true
     });
-    if (candidates.length === 0) {
-      new import_obsidian5.Notice(this.t("noCandidates"));
+    const remoteCandidates = await this.findRemoteCandidatesInNote(activeFile);
+    if (candidates.length === 0 && remoteCandidates.length === 0) {
+      new import_obsidian5.Notice(this.t("noCandidatesEither"));
       return;
     }
-    new CandidateModal(this.app, this, activeFile, candidates).open();
+    if (remoteCandidates.length > 0) {
+      const notice = new import_obsidian5.Notice(this.t("remoteImageFound", { count: remoteCandidates.length }), 0);
+      try {
+        const result = await this.transferRemoteImagesInNote(activeFile, remoteCandidates, (state) => {
+          notice.setMessage(`${this.t(state.phase === "downloading" ? "downloading" : state.phase === "uploading" ? "phaseUploading" : state.phase === "rewriting" ? "phaseRewriting" : "phaseDone")} ${state.label} (${state.current}/${state.total})`);
+        });
+        notice.hide();
+        if (result.replaced > 0) {
+          new import_obsidian5.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+        }
+      } catch (error) {
+        notice.hide();
+        new import_obsidian5.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+      }
+    }
+    if (candidates.length > 0) {
+      new CandidateModal(this.app, this, activeFile, candidates).open();
+    }
   }
   async scanVaultDryRun() {
     const files = this.app.vault.getMarkdownFiles();
@@ -5407,7 +5511,202 @@ var S3ImageSyncPlugin = class extends import_obsidian5.Plugin {
       }
     }
   }
+  // ─── Remote Image Transfer ───────────────────────────────────────────
+  async findRemoteCandidatesInNote(noteFile) {
+    const text = await this.app.vault.read(noteFile);
+    const refs = extractRemoteImageRefs(text);
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    const filtered = refs.filter((ref) => {
+      if (!ownDomain)
+        return true;
+      try {
+        const refHost = new URL(ref.url).origin.toLowerCase();
+        const ownHost = ownDomain.includes("://") ? new URL(ownDomain).origin.toLowerCase() : ownDomain;
+        return !refHost.includes(ownHost.replace(/^https?:\/\//, ""));
+      } catch {
+        return true;
+      }
+    });
+    const byUrl = /* @__PURE__ */ new Map();
+    for (const ref of filtered) {
+      const existing = byUrl.get(ref.url);
+      if (existing) {
+        existing.refs.push(ref);
+      } else {
+        byUrl.set(ref.url, {
+          url: ref.url,
+          alt: ref.alt,
+          guessedExt: guessExtFromUrl(ref.url),
+          refs: [ref]
+        });
+      }
+    }
+    return Array.from(byUrl.values());
+  }
+  async downloadRemoteImage(url) {
+    const maxBytes = Math.max(0, this.settings.remoteImageMaxSizeMiB || 10) * 1024 * 1024;
+    for (let attempt = 0; attempt <= _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES; attempt++) {
+      try {
+        const response = await requestUrl({
+          url,
+          method: "GET",
+          throw: false
+        });
+        if (response.status >= 400) {
+          if ((response.status === 429 || response.status >= 500) && attempt < _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES) {
+            new import_obsidian5.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+            await new Promise((r) => window.setTimeout(r, _S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
+            continue;
+          }
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const contentType = (response.headers["content-type"] || response.headers["Content-Type"] || "").toLowerCase();
+        if (!contentType.startsWith("image/") && !contentType.startsWith("application/octet-stream")) {
+          throw new Error(`Not an image (Content-Type: ${contentType})`);
+        }
+        const buffer = response.arrayBuffer;
+        if (buffer.byteLength > maxBytes) {
+          throw new Error(this.t("remoteImageTooLarge", { max: this.settings.remoteImageMaxSizeMiB }));
+        }
+        return { buffer, contentType };
+      } catch (error) {
+        if (attempt < _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES) {
+          const isFormattedError = error instanceof Error && (error.message.startsWith("HTTP ") || error.message.startsWith("Not an image") || error.message.includes("MiB"));
+          if (isFormattedError)
+            throw error;
+          new import_obsidian5.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+          await new Promise((r) => window.setTimeout(r, _S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error("Download failed after all retries");
+  }
+  async transferRemoteImagesInNote(noteFile, candidates, progress = null) {
+    this.ensureS3Settings();
+    const originalText = await this.app.vault.read(noteFile);
+    const replacementMap = /* @__PURE__ */ new Map();
+    let replaced = 0;
+    const total = candidates.length;
+    let completed = 0;
+    for (const candidate of candidates) {
+      progress?.({
+        phase: "downloading",
+        current: completed,
+        total,
+        label: new URL(candidate.url).hostname
+      });
+      try {
+        const { buffer } = await this.downloadRemoteImage(candidate.url);
+        const urlPath = new URL(candidate.url).pathname;
+        const urlBasename = urlPath.split("/").pop() || "remote-image";
+        const originalName = decodeURIComponent(urlBasename);
+        progress?.({
+          phase: "uploading",
+          current: completed,
+          total,
+          label: originalName
+        });
+        const result = await this.uploadBuffer(buffer, originalName, noteFile);
+        for (const ref of candidate.refs) {
+          const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${result.publicUrl})`;
+          replacementMap.set(ref.raw, newMarkdown);
+        }
+        completed++;
+      } catch (error) {
+        console.warn(`Failed to transfer remote image ${candidate.url}:`, error);
+        new import_obsidian5.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+        completed++;
+      }
+    }
+    if (replacementMap.size === 0)
+      return { replaced: 0 };
+    progress?.({
+      phase: "rewriting",
+      current: completed,
+      total,
+      label: noteFile.name
+    });
+    await this.app.vault.process(noteFile, (current) => {
+      if (current !== originalText) {
+        throw new Error(this.t("noteChanged"));
+      }
+      let next = current;
+      for (const [raw, replacement] of replacementMap.entries()) {
+        if (next.includes(raw)) {
+          next = replaceAllLiteral(next, raw, replacement);
+          replaced++;
+        }
+      }
+      return next;
+    });
+    progress?.({
+      phase: "done",
+      current: total,
+      total,
+      label: this.t("phaseDone")
+    });
+    return { replaced };
+  }
+  configureAutoRemoteTransfer() {
+    if (!this.settings.autoTransferRemoteImages)
+      return;
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        if (!(file instanceof import_obsidian5.TFile) || file.extension !== "md")
+          return;
+        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
+          return;
+        const existing = this.remoteTransferDebounceTimers.get(file.path);
+        if (existing)
+          window.clearTimeout(existing);
+        const timer = window.setTimeout(() => {
+          this.remoteTransferDebounceTimers.delete(file.path);
+          void this.autoTransferRemoteForFile(file);
+        }, 5e3);
+        this.remoteTransferDebounceTimers.set(file.path, timer);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (!(file instanceof import_obsidian5.TFile) || file.extension !== "md")
+          return;
+        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
+          return;
+        const existing = this.remoteTransferDebounceTimers.get(file.path);
+        if (existing)
+          window.clearTimeout(existing);
+        const timer = window.setTimeout(() => {
+          this.remoteTransferDebounceTimers.delete(file.path);
+          void this.autoTransferRemoteForFile(file);
+        }, 5e3);
+        this.remoteTransferDebounceTimers.set(file.path, timer);
+      })
+    );
+  }
+  async autoTransferRemoteForFile(file) {
+    try {
+      this.ensureS3Settings();
+    } catch {
+      return;
+    }
+    try {
+      const candidates = await this.findRemoteCandidatesInNote(file);
+      if (candidates.length === 0)
+        return;
+      const result = await this.transferRemoteImagesInNote(file, candidates);
+      if (result.replaced > 0) {
+        new import_obsidian5.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+      }
+    } catch (error) {
+      console.error(`Auto remote transfer failed for ${file.path}:`, error);
+    }
+  }
 };
+__publicField(_S3ImageSyncPlugin, "DOWNLOAD_MAX_RETRIES", 3);
+__publicField(_S3ImageSyncPlugin, "DOWNLOAD_BASE_DELAY_MS", 2e3);
+var S3ImageSyncPlugin = _S3ImageSyncPlugin;
 
 // src/main.ts
 var main_default = S3ImageSyncPlugin;
