@@ -15,7 +15,7 @@ import {
 } from "./types";
 import { DEFAULT_SETTINGS, getReplacementForExt, mergeSettings } from "./settings";
 import { extractLocalRefs, extractRemoteImageRefs, guessExtFromUrl } from "./link-parser";
-import { putS3Object, deleteS3Object } from "./s3-client";
+import { putS3Object, deleteS3Object, copyS3Object } from "./s3-client";
 import { sha256Hex } from "./crypto";
 import {
   basename,
@@ -112,6 +112,14 @@ export default class S3ImageSyncPlugin extends Plugin {
     }
     this.configureAutoScan();
     this.configureAutoRemoteTransfer();
+    // Sync S3 paths when note is moved/renamed
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
+          void this.syncS3PathsOnRename(file, oldPath);
+        }
+      })
+    );
   }
 
   onunload(): void {
@@ -1014,6 +1022,98 @@ export default class S3ImageSyncPlugin extends Plugin {
       }
     } catch (error) {
       console.error(`Auto remote transfer failed for ${file.path}:`, error);
+    }
+  }
+
+  // ─── S3 Path Sync on Note Rename ────────────────────────────────────
+
+  private async syncS3PathsOnRename(file: TFile, oldPath: string): Promise<void> {
+    try {
+      this.ensureS3Settings();
+    } catch { return; }
+
+    const text = await this.app.vault.read(file);
+    const remoteUrls = this.extractRemoteUrls(text);
+    if (remoteUrls.length === 0) return;
+
+    // Compute old/new notedir and notename
+    const oldLastSlash = oldPath.lastIndexOf("/");
+    const oldDir = oldLastSlash >= 0 ? oldPath.substring(0, oldLastSlash) : "";
+    const oldName = (oldLastSlash >= 0 ? oldPath.substring(oldLastSlash + 1) : oldPath).replace(/\.md$/, "");
+    const newDir = file.parent?.path || "";
+    const newName = file.basename;
+
+    // If neither directory nor name changed, nothing to do
+    if (oldDir === newDir && oldName === newName) return;
+
+    // Sanitize the same way renderPathTemplate does
+    const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
+    const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+    const safeOldDir = sanitizeDir(oldDir);
+    const safeNewDir = sanitizeDir(newDir);
+    const safeOldName = sanitizeName(oldName);
+    const safeNewName = sanitizeName(newName);
+
+    let movedCount = 0;
+    const urlReplacements = new Map<string, string>();
+
+    for (const url of remoteUrls) {
+      const oldKey = this.remoteUrlToS3Key(url);
+      let newKey = oldKey;
+
+      // Replace notedir segment in the key
+      if (safeOldDir !== safeNewDir) {
+        if (safeOldDir && newKey.startsWith(safeOldDir + "/")) {
+          newKey = safeNewDir + (safeNewDir ? "/" : "") + newKey.slice(safeOldDir.length + 1);
+        } else if (!safeOldDir && safeNewDir) {
+          // Note moved from vault root into a folder
+          newKey = safeNewDir + "/" + newKey;
+        } else if (safeOldDir && !safeNewDir) {
+          // Note moved from folder to vault root
+          newKey = newKey.slice(safeOldDir.length + 1);
+        }
+      }
+
+      // Replace notename segment in the key
+      if (safeOldName !== safeNewName) {
+        // Find the notename as a path segment (between slashes or at start)
+        const oldNameSegment = "/" + safeOldName + "/";
+        const newNameSegment = "/" + safeNewName + "/";
+        if (newKey.includes(oldNameSegment)) {
+          newKey = newKey.replace(oldNameSegment, newNameSegment);
+        } else if (newKey.startsWith(safeOldName + "/")) {
+          newKey = safeNewName + "/" + newKey.slice(safeOldName.length + 1);
+        }
+      }
+
+      if (newKey === oldKey) continue;
+
+      try {
+        await copyS3Object(this.settings.s3, oldKey, newKey);
+        await deleteS3Object(this.settings.s3, oldKey);
+        const newUrl = buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          newKey
+        );
+        urlReplacements.set(url, newUrl);
+        movedCount++;
+      } catch (error) {
+        console.error(`Failed to move S3 object ${oldKey} -> ${newKey}:`, error);
+      }
+    }
+
+    if (urlReplacements.size > 0) {
+      await this.app.vault.process(file, (content) => {
+        let next = content;
+        for (const [oldUrl, newUrl] of urlReplacements) {
+          next = replaceAllLiteral(next, oldUrl, newUrl);
+        }
+        return next;
+      });
+      await this.saveSettings();
+      new Notice(this.t("s3PathSynced", { count: movedCount }));
     }
   }
 }

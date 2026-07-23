@@ -3104,6 +3104,7 @@ var DEFAULT_SETTINGS = {
   autoUploadOnPaste: false,
   autoTransferRemoteImages: false,
   remoteImageMaxSizeMiB: 10,
+  syncS3OnNoteMove: true,
   logs: []
 };
 function isObject(value) {
@@ -3519,6 +3520,55 @@ async function putS3Object(config, key, body, contentType, formatError, precompu
     }
   }
 }
+async function copyS3Object(config, sourceKey, destKey) {
+  const endpoint = String(config.endpoint || "").replace(/\/+$/, "");
+  const bucket = config.bucketName;
+  const encodedDestKey = destKey.split("/").map(encodeURIComponent).join("/");
+  const url = `${endpoint}/${bucket}/${encodedDestKey}`;
+  const parsed = new URL(url);
+  const region = config.region || "auto";
+  const encodedSourceKey = sourceKey.split("/").map(encodeURIComponent).join("/");
+  const copySource = `/${bucket}/${encodedSourceKey}`;
+  const now = /* @__PURE__ */ new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const emptyHash = await sha256Hex(new Uint8Array(0));
+  const canonicalHeaders = [
+    `host:${parsed.host}`,
+    `x-amz-content-sha256:${emptyHash}`,
+    `x-amz-copy-source:${copySource}`,
+    `x-amz-date:${amzDate}`
+  ].join("\n") + "\n";
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-copy-source;x-amz-date";
+  const canonicalRequest = [
+    "PUT",
+    parsed.pathname,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    emptyHash
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const canonicalRequestHash = await sha256Hex(new TextEncoder().encode(canonicalRequest));
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    canonicalRequestHash
+  ].join("\n");
+  const signingKey = await getSignatureKey(config.secretAccessKey, dateStamp, region, "s3");
+  const signature = await hmacSha256Hex(signingKey, stringToSign);
+  const headers = {
+    "x-amz-content-sha256": emptyHash,
+    "x-amz-copy-source": copySource,
+    "x-amz-date": amzDate,
+    Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+  };
+  const response = await (0, import_obsidian.requestUrl)({ url, method: "PUT", headers, throw: false });
+  if (response.status >= 200 && response.status < 300)
+    return;
+  throw new Error(`S3 copy failed (${response.status}): ${response.text || ""}`);
+}
 async function deleteS3Object(config, key) {
   const endpoint = String(config.endpoint || "").replace(/\/+$/, "");
   const bucket = config.bucketName;
@@ -3765,7 +3815,12 @@ var I18N = {
     remoteMaxSizeDesc: "Skip remote images larger than this size. Default: 10 MiB.",
     noCandidatesEither: "No local or remote images found in this note.",
     remoteTransferNotice: "Transferred {count} remote image(s) to S3.",
-    downloadRetrying: "Download failed, retrying ({attempt}/{max})..."
+    downloadRetrying: "Download failed, retrying ({attempt}/{max})...",
+    // S3 path sync on note move
+    syncS3OnNoteMove: "Sync S3 paths when note moves",
+    syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
+    s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
+    s3PathSyncFailed: "S3 path sync failed: {error}"
   },
   zh: {
     // Ribbon & Commands
@@ -3921,7 +3976,12 @@ var I18N = {
     remoteMaxSizeDesc: "\u8D85\u8FC7\u6B64\u5927\u5C0F\u7684\u8FDC\u7A0B\u56FE\u7247\u5C06\u88AB\u8DF3\u8FC7\u3002\u9ED8\u8BA4\uFF1A10 MiB\u3002",
     noCandidatesEither: "\u5F53\u524D\u6587\u6863\u6CA1\u6709\u53EF\u5904\u7406\u7684\u672C\u5730\u6216\u7F51\u7EDC\u56FE\u7247\u3002",
     remoteTransferNotice: "\u5DF2\u5C06 {count} \u5F20\u7F51\u7EDC\u56FE\u7247\u8F6C\u5B58\u81F3 S3\u3002",
-    downloadRetrying: "\u4E0B\u8F7D\u5931\u8D25\uFF0C\u6B63\u5728\u91CD\u8BD5\uFF08{attempt}/{max}\uFF09..."
+    downloadRetrying: "\u4E0B\u8F7D\u5931\u8D25\uFF0C\u6B63\u5728\u91CD\u8BD5\uFF08{attempt}/{max}\uFF09...",
+    // S3 路径同步
+    syncS3OnNoteMove: "\u79FB\u52A8\u7B14\u8BB0\u65F6\u540C\u6B65 S3 \u56FE\u7247\u8DEF\u5F84",
+    syncS3OnNoteMoveDesc: "\u5F53\u7B14\u8BB0\u88AB\u79FB\u52A8\u6216\u91CD\u547D\u540D\u65F6\uFF0C\u81EA\u52A8\u5C06\u5176 S3 \u4E0A\u7684\u56FE\u7247\u8FC1\u79FB\u5230\u5BF9\u5E94\u7684\u65B0\u8DEF\u5F84\uFF0C\u5E76\u66F4\u65B0\u7B14\u8BB0\u4E2D\u7684\u6240\u6709\u94FE\u63A5\u3002",
+    s3PathSynced: "\u5DF2\u5C06 {count} \u5F20 S3 \u56FE\u7247\u8FC1\u79FB\u81F3\u65B0\u8DEF\u5F84\u3002",
+    s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}"
   }
 };
 function detectLocaleFromApp(getLanguage2) {
@@ -4517,6 +4577,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         }
       })
     );
+    new import_obsidian4.Setting(containerEl).setName(t2("syncS3OnNoteMove")).setDesc(t2("syncS3OnNoteMoveDesc")).addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.syncS3OnNoteMove).onChange((value) => {
+        this.plugin.settings.syncS3OnNoteMove = value;
+        void save();
+      })
+    );
     new import_obsidian4.Setting(containerEl).setName(t2("deletePolicy")).setDesc(t2("deletePolicyDesc")).addDropdown((dropdown) => {
       dropdown.addOption("confirm", t2("deleteConfirm")).addOption("immediate", t2("deleteImmediate"));
       if (!this.plugin.isMobile) {
@@ -4864,6 +4930,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     }
     this.configureAutoScan();
     this.configureAutoRemoteTransfer();
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (file instanceof import_obsidian5.TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
+          void this.syncS3PathsOnRename(file, oldPath);
+        }
+      })
+    );
   }
   onunload() {
     if (this.autoScanTimer)
@@ -5701,6 +5774,82 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       }
     } catch (error) {
       console.error(`Auto remote transfer failed for ${file.path}:`, error);
+    }
+  }
+  // ─── S3 Path Sync on Note Rename ────────────────────────────────────
+  async syncS3PathsOnRename(file, oldPath) {
+    try {
+      this.ensureS3Settings();
+    } catch {
+      return;
+    }
+    const text = await this.app.vault.read(file);
+    const remoteUrls = this.extractRemoteUrls(text);
+    if (remoteUrls.length === 0)
+      return;
+    const oldLastSlash = oldPath.lastIndexOf("/");
+    const oldDir = oldLastSlash >= 0 ? oldPath.substring(0, oldLastSlash) : "";
+    const oldName = (oldLastSlash >= 0 ? oldPath.substring(oldLastSlash + 1) : oldPath).replace(/\.md$/, "");
+    const newDir = file.parent?.path || "";
+    const newName = file.basename;
+    if (oldDir === newDir && oldName === newName)
+      return;
+    const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
+    const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+    const safeOldDir = sanitizeDir(oldDir);
+    const safeNewDir = sanitizeDir(newDir);
+    const safeOldName = sanitizeName(oldName);
+    const safeNewName = sanitizeName(newName);
+    let movedCount = 0;
+    const urlReplacements = /* @__PURE__ */ new Map();
+    for (const url of remoteUrls) {
+      const oldKey = this.remoteUrlToS3Key(url);
+      let newKey = oldKey;
+      if (safeOldDir !== safeNewDir) {
+        if (safeOldDir && newKey.startsWith(safeOldDir + "/")) {
+          newKey = safeNewDir + (safeNewDir ? "/" : "") + newKey.slice(safeOldDir.length + 1);
+        } else if (!safeOldDir && safeNewDir) {
+          newKey = safeNewDir + "/" + newKey;
+        } else if (safeOldDir && !safeNewDir) {
+          newKey = newKey.slice(safeOldDir.length + 1);
+        }
+      }
+      if (safeOldName !== safeNewName) {
+        const oldNameSegment = "/" + safeOldName + "/";
+        const newNameSegment = "/" + safeNewName + "/";
+        if (newKey.includes(oldNameSegment)) {
+          newKey = newKey.replace(oldNameSegment, newNameSegment);
+        } else if (newKey.startsWith(safeOldName + "/")) {
+          newKey = safeNewName + "/" + newKey.slice(safeOldName.length + 1);
+        }
+      }
+      if (newKey === oldKey)
+        continue;
+      try {
+        await copyS3Object(this.settings.s3, oldKey, newKey);
+        await deleteS3Object(this.settings.s3, oldKey);
+        const newUrl = buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          newKey
+        );
+        urlReplacements.set(url, newUrl);
+        movedCount++;
+      } catch (error) {
+        console.error(`Failed to move S3 object ${oldKey} -> ${newKey}:`, error);
+      }
+    }
+    if (urlReplacements.size > 0) {
+      await this.app.vault.process(file, (content) => {
+        let next = content;
+        for (const [oldUrl, newUrl] of urlReplacements) {
+          next = replaceAllLiteral(next, oldUrl, newUrl);
+        }
+        return next;
+      });
+      await this.saveSettings();
+      new import_obsidian5.Notice(this.t("s3PathSynced", { count: movedCount }));
     }
   }
 };

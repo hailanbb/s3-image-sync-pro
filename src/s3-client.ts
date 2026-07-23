@@ -118,6 +118,64 @@ export async function putS3Object(
   }
 }
 
+export async function copyS3Object(config: S3Config, sourceKey: string, destKey: string): Promise<void> {
+  const endpoint = String(config.endpoint || "").replace(/\/+$/, "");
+  const bucket = config.bucketName;
+  const encodedDestKey = destKey.split("/").map(encodeURIComponent).join("/");
+  const url = `${endpoint}/${bucket}/${encodedDestKey}`;
+  const parsed = new URL(url);
+  const region = config.region || "auto";
+
+  const encodedSourceKey = sourceKey.split("/").map(encodeURIComponent).join("/");
+  const copySource = `/${bucket}/${encodedSourceKey}`;
+
+  const now = new Date();
+  const amzDate = toAmzDate(now);
+  const dateStamp = amzDate.slice(0, 8);
+  const emptyHash = await sha256Hex(new Uint8Array(0));
+
+  const canonicalHeaders =
+    [
+      `host:${parsed.host}`,
+      `x-amz-content-sha256:${emptyHash}`,
+      `x-amz-copy-source:${copySource}`,
+      `x-amz-date:${amzDate}`,
+    ].join("\n") + "\n";
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-copy-source;x-amz-date";
+
+  const canonicalRequest = [
+    "PUT",
+    parsed.pathname,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    emptyHash,
+  ].join("\n");
+
+  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+  const canonicalRequestHash = await sha256Hex(new TextEncoder().encode(canonicalRequest));
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    canonicalRequestHash,
+  ].join("\n");
+
+  const signingKey = await getSignatureKey(config.secretAccessKey, dateStamp, region, "s3");
+  const signature = await hmacHex(signingKey, stringToSign);
+
+  const headers: Record<string, string> = {
+    "x-amz-content-sha256": emptyHash,
+    "x-amz-copy-source": copySource,
+    "x-amz-date": amzDate,
+    Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+  };
+
+  const response = await requestUrl({ url, method: "PUT", headers, throw: false });
+  if (response.status >= 200 && response.status < 300) return;
+  throw new Error(`S3 copy failed (${response.status}): ${response.text || ""}`);
+}
+
 export async function deleteS3Object(config: S3Config, key: string): Promise<void> {
   const endpoint = String(config.endpoint || "").replace(/\/+$/, "");
   const bucket = config.bucketName;

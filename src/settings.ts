@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoUploadOnPaste: false,
   autoTransferRemoteImages: false,
   remoteImageMaxSizeMiB: 10,
+  syncS3OnNoteMove: true,
   logs: [],
 };
 

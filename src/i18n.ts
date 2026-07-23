@@ -178,6 +178,12 @@ export const I18N: Record<string, Record<string, string>> = {
     noCandidatesEither: "No local or remote images found in this note.",
     remoteTransferNotice: "Transferred {count} remote image(s) to S3.",
     downloadRetrying: "Download failed, retrying ({attempt}/{max})...",
+
+    // S3 path sync on note move
+    syncS3OnNoteMove: "Sync S3 paths when note moves",
+    syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
+    s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
+    s3PathSyncFailed: "S3 path sync failed: {error}",
   },
   zh: {
     // Ribbon & Commands
@@ -357,6 +363,12 @@ export const I18N: Record<string, Record<string, string>> = {
     noCandidatesEither: "当前文档没有可处理的本地或网络图片。",
     remoteTransferNotice: "已将 {count} 张网络图片转存至 S3。",
     downloadRetrying: "下载失败，正在重试（{attempt}/{max}）...",
+
+    // S3 路径同步
+    syncS3OnNoteMove: "移动笔记时同步 S3 图片路径",
+    syncS3OnNoteMoveDesc: "当笔记被移动或重命名时，自动将其 S3 上的图片迁移到对应的新路径，并更新笔记中的所有链接。",
+    s3PathSynced: "已将 {count} 张 S3 图片迁移至新路径。",
+    s3PathSyncFailed: "S3 路径同步失败：{error}",
   },
 };
 

@@ -38,6 +38,7 @@ export interface PluginSettings {
   autoUploadOnPaste: boolean;
   autoTransferRemoteImages: boolean;
   remoteImageMaxSizeMiB: number;
+  syncS3OnNoteMove: boolean;
   logs: LogEntry[];
 }
 

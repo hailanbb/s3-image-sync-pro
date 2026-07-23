@@ -243,6 +243,16 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("syncS3OnNoteMove"))
+      .setDesc(t("syncS3OnNoteMoveDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.syncS3OnNoteMove).onChange((value) => {
+          this.plugin.settings.syncS3OnNoteMove = value;
+          void save();
+        })
+      );
+
+    new Setting(containerEl)
       .setName(t("deletePolicy"))
       .setDesc(t("deletePolicyDesc"))
       .addDropdown((dropdown) => {
