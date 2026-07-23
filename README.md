@@ -4,20 +4,6 @@
 
 **S3 Image Sync Pro** is a polished, modern, and mobile-friendly Obsidian plugin that scans local note images, uploads them to your S3-compatible cloud storage (Cloudflare R2, AWS S3, MinIO, etc.), and replaces local Markdown links with remote public URLs safely.
 
----
-
-> 📢 **Pro Version Enhancements**
->
-> This Pro version has been deeply refactored and supercharged with **3 killer features** over traditional image sync plugins:
-> 
-> 1. ⚡ **WebP WASM Advanced Compression**: Integrated with a powerful local WebP WebAssembly encoder. Automatically compress heavy screenshots/photos (JPEG/PNG) into modern, lightweight WebP format *before* uploading, drastically saving your S3 storage costs and boosting note loading speeds.
-> 2. 🗂️ **Note-Path Based Organization**: Keep your cloud bucket organized just like your vault! Use the `{notedir}` and `{notename}` variables in your upload path template to automatically mirror your Obsidian folder structure into your S3 bucket.
-> 3. 🗑️ **Two-Way Delete Sync**: No more "ghost attachments" eating up your cloud quota! When you delete a note or an image inside Obsidian, the plugin detects the deletion and safely removes the corresponding file from your S3 bucket in the background.
-> 4. 🌐 **Remote Image Auto-Transfer**: Automatically detect, download, compress, and re-upload external web images (e.g., from Web Clipper) to your S3 bucket in the background. No local files generated!
-> 5. 🔄 **S3 Path Auto-Sync**: When you move or rename a note in Obsidian, its associated S3 images are automatically moved to match the new path, keeping your cloud bucket perfectly aligned with your vault structure.
-
----
-
 ## Quick Start
 
 1. Install the plugin and open **Settings → S3 Image Sync Pro**
@@ -25,17 +11,21 @@
 3. Fill in your credentials and click **Test connection**
 4. Open a note containing local images and click the cloud icon in the left ribbon — done!
 
-## Features
+## ✨ Features
 
-- **S3-compatible storage**: Cloudflare R2 (recommended), AWS S3, MinIO, or any S3-compatible provider.
-- **WebP Compression**: Configurable image compression (Quality settings & optional resize) powered by embedded WASM.
-- **Smart Delete Sync**: Keeps your cloud storage clean by automatically syncing local deletions to the cloud.
-- **Cross-Platform Responsive**: Fully functional on both Obsidian desktop and mobile, optimized with custom viewport CSS rules.
+**🔥 5 Killer Pro Enhancements**
+1. ⚡ **WebP WASM Compression**: Embedded local WebP encoder compresses heavy screenshots into modern, lightweight formats *before* uploading, drastically saving costs and boosting load speeds.
+2. 🗂️ **Note-Path Organization**: Use `{notedir}` and `{notename}` variables to automatically mirror your Obsidian folder structure into your S3 bucket.
+3. 🗑️ **Two-Way Delete Sync**: When you delete a note or image inside Obsidian, the plugin safely removes the corresponding file from S3 in the background. No more "ghost attachments"!
+4. 🌐 **Remote Image Auto-Transfer**: Automatically detect, download, compress, and re-upload external web images (e.g., from Web Clipper) to S3 in the background. No local files generated!
+5. 🔄 **S3 Path Auto-Sync**: When you move or rename a note, its associated S3 images are automatically moved to match the new path, keeping your cloud perfectly aligned with your vault.
+
+**🛠️ More Powerful Features**
+- **S3-Compatible Storage**: Works seamlessly with Cloudflare R2 (recommended), AWS S3, MinIO, or any S3-compatible provider.
+- **Cross-Platform**: Fully functional on both Obsidian desktop and mobile with optimized, responsive UI.
 - **Modern Gallery View**: Browse local images easily with lazy-loading previews and smooth selection controls.
-- **Safe Replacement & Rollback**: Atomic note writes with concurrent-edit detection; failed uploads are automatically rolled back.
-- **Upload Resilience**: 3 retries with exponential backoff on transient network failures.
-- **Delete Policies**: Ask before delete, immediate trash, or delayed delete (desktop only).
-- **Auto Scan**: Periodic vault-wide scanning with quiet-period and image size filtering (desktop only).
+- **Safe Replacement & Resilience**: Atomic note writes prevent concurrent-edit corruption; failed uploads auto-rollback; built-in exponential backoff for network failures.
+- **Smart Parsing**: Intelligently ignores images inside fenced code blocks and inline code.
 
 ## Installation
 
@@ -93,20 +83,6 @@ MIT
 
 **S3 Image Sync Pro** 是一款优雅、轻量且对移动端深度优化的 Obsidian 核心图片上传插件。它能自动扫描当前笔记中的本地图片，安全上传至 S3 兼容的云存储（如 Cloudflare R2、AWS S3、MinIO 等），并自动将笔记中的本地链接无缝替换为公共云端 URL。
 
----
-
-> 📢 **Pro 版五大核心新特性**
->
-> 相比传统的图床插件，Pro 版深入痛点进行了重构，带来了五大杀手锏级别的能力：
-> 
-> 1. ⚡ **WebP 高级压缩**：内置了强大的 WebP WebAssembly 编码引擎。在上传云端之前，插件能在本地极速将臃肿的截图/照片（JPEG/PNG）压缩为现代的 WebP 格式。大幅节省您的 S3 流量和存储成本，让笔记里的图片做到“秒开”体验！
-> 2. 🗂️ **基于笔记路径自动归类**：告别云端存储桶里数万张图片乱作一团的窘境！路径模板新增了 `{notedir}`（笔记所在目录）和 `{notename}`（笔记名）变量，让您的云端附件也能像本地一样按照笔记的树形目录结构自动归类，一目了然！
-> 3. 🗑️ **删除同步云端清理**：当您在 Obsidian 中删除了某个废弃的笔记，或者删除了某张错传的图片时，插件会聪明地监听到删除事件，并在后台批量从 S3/R2 云端彻底抹除对应的图片文件，彻底告别“幽灵附件”不断侵蚀云端容量的烦恼！
-> 4. 🌐 **网络图片自动转存**：当检测到笔记中包含外部网络图片（如使用 Web Clipper 剪藏的内容）时，插件会在后台自动将其下载、WebP 压缩并转存至您的 S3 图床，然后无缝替换笔记中的链接。纯内存处理，不产生任何本地临时文件！
-> 5. 🔄 **S3 路径智能跟随**：在 Obsidian 中移动或重命名笔记时，云端 S3 中的对应图片会自动“搬家”到新路径下，并自动更新笔记内的所有链接。让您的云端图床结构始终与本地知识库保持 100% 同步！
-
----
-
 ## 快速上手
 
 1. 安装插件，打开 **设置 → S3 Image Sync Pro**
@@ -114,16 +90,21 @@ MIT
 3. 填写凭据，点击 **测试连接** 验证
 4. 打开一篇有本地图片的笔记，点击左侧栏的云图标 — 搞定！
 
-## 核心功能
+## ✨ 核心功能 (Features)
 
-- **WebP 本地无感压缩**: 纯本地 WASM 运算，极速瘦身，支持自定义压缩质量。
-- **笔记目录结构映射**: 支持将 Obsidian 的文件夹路径直接映射到云端存储桶路径中。
-- **云端垃圾自动清理**: 本地删除文件后，云端联动删除，保持云端存储桶清爽。
-- **S3 兼容存储**: 支持 Cloudflare R2、AWS S3、MinIO 及任意 S3 兼容服务。
-- **移动端兼容**: 桌面端和移动端均可使用，移动端也拥有优雅、独立的响应式布局。
-- **现代画廊视图**: 通过懒加载预览和流畅的选择控件，轻松浏览本地图片。
-- **安全替换 & 自动回退**: 原子性文件写入，检测并发编辑；上传中途失败时自动删除已上传文件并回滚。
-- **代码块感知**: 智能忽略 fenced code block 和行内代码中的图片。
+**🔥 五大杀手锏特性 (Pro 独享)**
+1. ⚡ **WebP 高级压缩**：内置强大的 WebP WebAssembly 编码引擎，在上传前将臃肿的截图极速压缩，大幅节省 S3 流量和存储成本，实现图片“秒开”。
+2. 🗂️ **基于笔记路径归类**：新增 `{notedir}` 和 `{notename}` 变量，让云端附件完美映射本地 Obsidian 的树形目录结构，告别图床文件杂乱无章。
+3. 🗑️ **删除联动清理**：当您在本地删除笔记或废弃图片时，插件会在后台自动从 S3 云端抹除对应的文件，彻底消灭“幽灵附件”。
+4. 🌐 **网络图片自动转存**：检测到笔记中的外部网络图片（如 Web Clipper 剪藏）时，后台自动下载、WebP 压缩并转存至您的 S3 图床，无缝替换链接，不产生任何本地临时文件。
+5. 🔄 **S3 路径智能跟随**：在 Obsidian 中移动或重命名笔记时，云端 S3 中的对应图片会自动“搬家”到新路径，保持云端图床与本地知识库 100% 同步。
+
+**🛠️ 更多强大功能**
+- **S3 兼容存储**：原生支持 Cloudflare R2（推荐）、AWS S3、MinIO 及任意兼容服务。
+- **移动端完美适配**：全功能支持桌面端与移动端，专为手机设计的优雅响应式 UI。
+- **现代画廊扫描视图**：提供类似相册的懒加载预览和流畅的操作控件，轻松批量管理本地图片。
+- **极致的安全与容错**：原子性文件写入避免并发覆盖；上传失败自动回滚；网络波动时支持指数退避重试（最多重试 3 次）。
+- **智能代码块感知**：自动忽略代码块（code blocks）中的图片链接，防止误改代码。
 
 ## 配置说明
 
