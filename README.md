@@ -13,6 +13,8 @@
 > 1. ⚡ **WebP WASM Advanced Compression**: Integrated with a powerful local WebP WebAssembly encoder. Automatically compress heavy screenshots/photos (JPEG/PNG) into modern, lightweight WebP format *before* uploading, drastically saving your S3 storage costs and boosting note loading speeds.
 > 2. 🗂️ **Note-Path Based Organization**: Keep your cloud bucket organized just like your vault! Use the `{notedir}` and `{notename}` variables in your upload path template to automatically mirror your Obsidian folder structure into your S3 bucket.
 > 3. 🗑️ **Two-Way Delete Sync**: No more "ghost attachments" eating up your cloud quota! When you delete a note or an image inside Obsidian, the plugin detects the deletion and safely removes the corresponding file from your S3 bucket in the background.
+> 4. 🌐 **Remote Image Auto-Transfer**: Automatically detect, download, compress, and re-upload external web images (e.g., from Web Clipper) to your S3 bucket in the background. No local files generated!
+> 5. 🔄 **S3 Path Auto-Sync**: When you move or rename a note in Obsidian, its associated S3 images are automatically moved to match the new path, keeping your cloud bucket perfectly aligned with your vault structure.
 
 ---
 
@@ -93,13 +95,15 @@ MIT
 
 ---
 
-> 📢 **Pro 版三大核心新特性**
+> 📢 **Pro 版五大核心新特性**
 >
-> 相比传统的图床插件，Pro 版深入痛点进行了重构，带来了三大杀手锏级别的能力：
+> 相比传统的图床插件，Pro 版深入痛点进行了重构，带来了五大杀手锏级别的能力：
 > 
 > 1. ⚡ **WebP 高级压缩**：内置了强大的 WebP WebAssembly 编码引擎。在上传云端之前，插件能在本地极速将臃肿的截图/照片（JPEG/PNG）压缩为现代的 WebP 格式。大幅节省您的 S3 流量和存储成本，让笔记里的图片做到“秒开”体验！
 > 2. 🗂️ **基于笔记路径自动归类**：告别云端存储桶里数万张图片乱作一团的窘境！路径模板新增了 `{notedir}`（笔记所在目录）和 `{notename}`（笔记名）变量，让您的云端附件也能像本地一样按照笔记的树形目录结构自动归类，一目了然！
 > 3. 🗑️ **删除同步云端清理**：当您在 Obsidian 中删除了某个废弃的笔记，或者删除了某张错传的图片时，插件会聪明地监听到删除事件，并在后台批量从 S3/R2 云端彻底抹除对应的图片文件，彻底告别“幽灵附件”不断侵蚀云端容量的烦恼！
+> 4. 🌐 **网络图片自动转存**：当检测到笔记中包含外部网络图片（如使用 Web Clipper 剪藏的内容）时，插件会在后台自动将其下载、WebP 压缩并转存至您的 S3 图床，然后无缝替换笔记中的链接。纯内存处理，不产生任何本地临时文件！
+> 5. 🔄 **S3 路径智能跟随**：在 Obsidian 中移动或重命名笔记时，云端 S3 中的对应图片会自动“搬家”到新路径下，并自动更新笔记内的所有链接。让您的云端图床结构始终与本地知识库保持 100% 同步！
 
 ---
 
