@@ -3046,7 +3046,7 @@ var DEFAULT_S3 = {
   accessKeyId: "",
   secretAccessKey: "",
   customDomainName: "",
-  pathTemplate: "attachments/{ext}/{hash2}/{hash}.{ext}"
+  pathTemplate: "{notedir}/{notename}/{filename}-{hash-short}.{ext}"
 };
 var DEFAULT_ENABLED_EXTS = [
   "png",
@@ -3350,7 +3350,7 @@ function renderPathTemplate(template, values) {
   const MM = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   const hashShort = (values.hash || "").slice(0, 32);
-  return String(template || "attachments/{ext}/{hash2}/{hash}.{ext}").replace(/\{ext\}/g, values.ext).replace(/\{hash\}/g, values.hash).replace(/\{hash2\}/g, values.hash2).replace(/\{filename\}/g, values.filename).replace(/\{notedir\}/g, values.notedir ? values.notedir.replace(/[\\:*?"<>|]+/g, "-") : "").replace(/\{notename\}/g, values.notename ? values.notename.replace(/[\\/:*?"<>|#%]+/g, "-") : "").replace(/\{hash-short\}/g, hashShort).replace(/\{yyyy\}/g, yyyy).replace(/\{MM\}/g, MM).replace(/\{dd\}/g, dd).replace(/^\/+/, "");
+  return String(template || "{notedir}/{notename}/{filename}-{hash-short}.{ext}").replace(/\{ext\}/g, values.ext).replace(/\{hash\}/g, values.hash).replace(/\{hash2\}/g, values.hash2).replace(/\{filename\}/g, values.filename).replace(/\{notedir\}/g, values.notedir ? values.notedir.replace(/[\\:*?"<>|]+/g, "-") : "").replace(/\{notename\}/g, values.notename ? values.notename.replace(/[\\/:*?"<>|#%]+/g, "-") : "").replace(/\{hash-short\}/g, hashShort).replace(/\{yyyy\}/g, yyyy).replace(/\{MM\}/g, MM).replace(/\{dd\}/g, dd).replace(/^\/+/, "");
 }
 function buildPublicUrl(domain, endpoint, bucket, key) {
   let base = String(domain || "").replace(/\/+$/, "");

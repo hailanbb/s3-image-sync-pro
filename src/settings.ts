@@ -9,7 +9,7 @@ const DEFAULT_S3: S3Config = {
   accessKeyId: "",
   secretAccessKey: "",
   customDomainName: "",
-  pathTemplate: "attachments/{ext}/{hash2}/{hash}.{ext}",
+  pathTemplate: "{notedir}/{notename}/{filename}-{hash-short}.{ext}",
 };
 
 const DEFAULT_ENABLED_EXTS: string[] = [

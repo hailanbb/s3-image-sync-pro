@@ -20,7 +20,7 @@ export function renderPathTemplate(
   const dd = String(now.getDate()).padStart(2, "0");
   const hashShort = (values.hash || "").slice(0, 32);
 
-  return String(template || "attachments/{ext}/{hash2}/{hash}.{ext}")
+  return String(template || "{notedir}/{notename}/{filename}-{hash-short}.{ext}")
     .replace(/\{ext\}/g, values.ext)
     .replace(/\{hash\}/g, values.hash)
     .replace(/\{hash2\}/g, values.hash2)
