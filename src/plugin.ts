@@ -1,4 +1,4 @@
-import { Notice, Platform, Plugin, TFile, getLanguage, Editor, MarkdownView, MarkdownFileInfo } from "obsidian";
+import { Notice, Platform, Plugin, TFile, getLanguage, Editor, MarkdownView, MarkdownFileInfo, requestUrl } from "obsidian";
 import {
   Candidate,
   DeletePolicy,
@@ -8,7 +8,6 @@ import {
   PluginSettings,
   ProgressState,
   RemoteCandidate,
-  RemoteImageRef,
   ReplaceResult,
   ScanOptions,
   UploadResult,
@@ -32,7 +31,6 @@ import { CandidateModal } from "./candidate-modal";
 import { DryRunModal } from "./dry-run-modal";
 import { compressToWebp, setWasmLoader } from "./image-compressor";
 import { S3ImageSyncSettingTab } from "./settings-tab";
-import { debounce } from "./utils";
 
 export default class S3ImageSyncPlugin extends Plugin {
   declare settings: PluginSettings;
@@ -361,7 +359,6 @@ export default class S3ImageSyncPlugin extends Plugin {
   ): Promise<ReplaceResult> {
     const deleteMode = options.deleteMode || this.settings.deletePolicy || "confirm";
     this.ensureS3Settings();
-    const originalText = await this.app.vault.read(noteFile);
     let noteChanged = false;
     let replaced = 0;
     const replacementMap = new Map<string, string>();
@@ -895,7 +892,6 @@ export default class S3ImageSyncPlugin extends Plugin {
     progress: ((state: ProgressState) => void) | null = null
   ): Promise<ReplaceResult> {
     this.ensureS3Settings();
-    const originalText = await this.app.vault.read(noteFile);
     const replacementMap = new Map<string, string>();
     let replaced = 0;
     const total = candidates.length;

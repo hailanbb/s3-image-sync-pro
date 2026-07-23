@@ -5174,7 +5174,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
   async replaceCandidates(noteFile, candidates, progress, options = {}) {
     const deleteMode = options.deleteMode || this.settings.deletePolicy || "confirm";
     this.ensureS3Settings();
-    const originalText = await this.app.vault.read(noteFile);
     let noteChanged = false;
     let replaced = 0;
     const replacementMap = /* @__PURE__ */ new Map();
@@ -5617,7 +5616,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     const maxBytes = Math.max(0, this.settings.remoteImageMaxSizeMiB || 10) * 1024 * 1024;
     for (let attempt = 0; attempt <= _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES; attempt++) {
       try {
-        const response = await requestUrl({
+        const response = await (0, import_obsidian5.requestUrl)({
           url,
           method: "GET",
           throw: false
@@ -5655,7 +5654,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
   }
   async transferRemoteImagesInNote(noteFile, candidates, progress = null) {
     this.ensureS3Settings();
-    const originalText = await this.app.vault.read(noteFile);
     const replacementMap = /* @__PURE__ */ new Map();
     let replaced = 0;
     const total = candidates.length;
