@@ -73,6 +73,10 @@ The **Upload path template** allows you to dynamically customize the S3 object k
 - **WebP Compression**: Enable to automatically encode uploaded images to WebP. You can adjust the quality slider to find your perfect balance between size and quality.
 - **Cloud Delete Sync**: Enable to auto-trash corresponding S3 images when you delete a note or an image inside Obsidian.
 
+## Acknowledgments
+
+This project is a heavily refactored and enhanced fork of the excellent [s3-image-sync](https://github.com/jongchoiyip/s3-image-sync) by [jongchoiyip](https://github.com/jongchoiyip). A huge thanks and profound respect to the original author for laying the incredible foundation that made this Pro version possible!
+
 ## License
 
 MIT
@@ -134,6 +138,10 @@ MIT
 
 - **开启 WebP 压缩**：强烈建议开启。您可以拖动滑块寻找体积与画质的完美平衡点。
 - **开启云端删除联动**：开启后，当插件监听到本地有图片或笔记被删除时，会自动将之前上传的云端 S3 文件一并丢入垃圾桶，做到彻彻底底的清理！
+
+## 致敬与鸣谢
+
+本项目基于 [jongchoiyip](https://github.com/jongchoiyip) 的优秀开源项目 [s3-image-sync](https://github.com/jongchoiyip/s3-image-sync) 进行深度重构与功能扩展。在此向原作者表达最诚挚的敬意与感谢，正是因为有了他打下的坚实基础，才有了如今强大易用的 Pro 版本！
 
 ## 许可证
 
