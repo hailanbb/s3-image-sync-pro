@@ -5340,7 +5340,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       }
     }
   }
-  async uploadBuffer(binary, originalName, noteFile) {
+  async uploadBuffer(binary, originalName, noteFile, originalFilePath) {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
     let originalExt = "";
@@ -5398,8 +5398,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       localPath = `${mirrorRoot}/${keyStem}.${originalExt}`;
       const existing = this.app.vault.getAbstractFileByPath(localPath);
       if (existing instanceof import_obsidian6.TFile) {
-        const publicUrl2 = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
-        return { key, publicUrl: publicUrl2, localPath };
+        if (existing.path !== originalFilePath) {
+          const publicUrl2 = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
+          return { key, publicUrl: publicUrl2, localPath };
+        }
       }
     }
     await putS3Object(
@@ -5432,7 +5434,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   async uploadCandidate(candidate, noteFile) {
     const binary = await this.app.vault.readBinary(candidate.file);
-    return this.uploadBuffer(binary, candidate.file.name, noteFile);
+    return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
   buildReplacement(ref, candidate, publicUrl) {
     const encodedBase = publicUrl;
@@ -5451,10 +5453,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     for (const candidate of candidates) {
       if (byPath.has(candidate.file.path))
         continue;
+      const upload = uploaded.get(candidate.file.path);
+      if (upload?.localPath && candidate.file.path === upload.localPath) {
+        continue;
+      }
       byPath.set(candidate.file.path, {
         path: candidate.file.path,
         name: candidate.file.name,
-        remoteUrl: uploaded.get(candidate.file.path)?.publicUrl || ""
+        remoteUrl: upload?.publicUrl || ""
       });
     }
     return Array.from(byPath.values());
