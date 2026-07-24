@@ -14,6 +14,12 @@ function shouldRetry(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
+/** R2 only supports region "auto" for Signature V4; stored value may be "us-east-1" from old configs */
+function getEffectiveRegion(config: S3Config): string {
+  if (config.provider === "r2") return "auto";
+  return config.region || "us-east-1";
+}
+
 export async function putS3Object(
   config: S3Config,
   key: string,
@@ -27,7 +33,7 @@ export async function putS3Object(
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
 
   // CRITICAL FIX: Ensure the body is a pure V8 ArrayBuffer before it's passed to Electron IPC via requestUrl.
   // WASM-backed ArrayBuffers can cause structured clone / serialization issues over IPC, leading to corrupted 
@@ -124,7 +130,7 @@ export async function copyS3Object(config: S3Config, sourceKey: string, destKey:
   const encodedDestKey = destKey.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedDestKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
 
   const encodedSourceKey = sourceKey.split("/").map(encodeURIComponent).join("/");
   const copySource = `/${bucket}/${encodedSourceKey}`;
@@ -182,7 +188,7 @@ export async function deleteS3Object(config: S3Config, key: string): Promise<voi
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
 
   const now = new Date();
   const amzDate = toAmzDate(now);
@@ -235,7 +241,7 @@ export async function testS3Connection(config: S3Config): Promise<void> {
   const bucket = config.bucketName;
   const url = `${endpoint}/${bucket}/`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
 
   const now = new Date();
   const amzDate = toAmzDate(now);

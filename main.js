@@ -3025,7 +3025,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 
 // src/plugin.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/file-categories.ts
 var FILE_CATEGORIES = [
@@ -3088,15 +3088,12 @@ var DEFAULT_SETTINGS = {
   quietSeconds: 600,
   autoScanMinSizeMiB: 0,
   attachmentRoot: "90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6",
-  deletePolicy: "confirm",
-  autoDeleteDelayHours: 24,
   s3: DEFAULT_S3,
   enabledExtensions: DEFAULT_ENABLED_EXTS,
   minSizeRules: DEFAULT_MIN_SIZE,
   autoCandidateExts: DEFAULT_AUTO_CANDIDATE_EXTS,
   customExtensions: [],
   customReplacements: {},
-  pendingDeletes: [],
   webpEnabled: false,
   webpQuality: 80,
   webpSkipFormats: ["svg", "gif"],
@@ -3105,6 +3102,8 @@ var DEFAULT_SETTINGS = {
   autoTransferRemoteImages: false,
   remoteImageMaxSizeMiB: 10,
   syncS3OnNoteMove: true,
+  localMirrorRoot: "98 cloudflareR2",
+  linkMode: "local",
   logs: []
 };
 function isObject(value) {
@@ -3163,7 +3162,6 @@ function mergeSettings(defaults, loaded) {
     autoCandidateExts: migrated.autoCandidateExts || data.autoCandidateExts || defaults.autoCandidateExts,
     customExtensions: data.customExtensions || defaults.customExtensions,
     customReplacements: migrated.customReplacements || data.customReplacements || defaults.customReplacements,
-    pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : []
   };
 }
@@ -3336,9 +3334,6 @@ async function getSignatureKey(secret, dateStamp, region, service) {
 }
 
 // src/utils.ts
-function basename2(path) {
-  return String(path || "").split("/").pop() || path;
-}
 function trimSlashes(path) {
   return String(path || "").replace(/^\/+|\/+$/g, "");
 }
@@ -3442,13 +3437,18 @@ function sleep(ms) {
 function shouldRetry(status) {
   return status === 429 || status >= 500;
 }
+function getEffectiveRegion(config) {
+  if (config.provider === "r2")
+    return "auto";
+  return config.region || "us-east-1";
+}
 async function putS3Object(config, key, body, contentType, formatError, precomputedHash) {
   const endpoint = String(config.endpoint || "").replace(/\/+$/, "");
   const bucket = config.bucketName;
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
   const safeBody = new Uint8Array(body.length);
   safeBody.set(body);
   const safeBuffer = safeBody.buffer;
@@ -3526,7 +3526,7 @@ async function copyS3Object(config, sourceKey, destKey) {
   const encodedDestKey = destKey.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedDestKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
   const encodedSourceKey = sourceKey.split("/").map(encodeURIComponent).join("/");
   const copySource = `/${bucket}/${encodedSourceKey}`;
   const now = /* @__PURE__ */ new Date();
@@ -3575,7 +3575,7 @@ async function deleteS3Object(config, key) {
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
   const now = /* @__PURE__ */ new Date();
   const amzDate = toAmzDate(now);
   const dateStamp = amzDate.slice(0, 8);
@@ -3619,7 +3619,7 @@ async function testS3Connection(config) {
   const bucket = config.bucketName;
   const url = `${endpoint}/${bucket}/`;
   const parsed = new URL(url);
-  const region = config.region || "auto";
+  const region = getEffectiveRegion(config);
   const now = /* @__PURE__ */ new Date();
   const amzDate = toAmzDate(now);
   const dateStamp = amzDate.slice(0, 8);
@@ -3663,7 +3663,7 @@ async function testS3Connection(config) {
 var I18N = {
   en: {
     // Ribbon & Commands
-    ribbonScan: "Scan current note images",
+    ribbonScan: "S3 Image Sync Pro: Options Menu",
     commandScanCurrent: "Scan current note images",
     commandScanVault: "Scan vault images without replacing",
     commandProcessDeletes: "Process delayed image deletes",
@@ -3820,11 +3820,35 @@ var I18N = {
     syncS3OnNoteMove: "Sync S3 paths when note moves",
     syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
-    s3PathSyncFailed: "S3 path sync failed: {error}"
+    s3PathSyncFailed: "S3 path sync failed: {error}",
+    // Link toggle & migration
+    commandToggleLinks: "Toggle image links (local \u2194 cloud)",
+    commandDownloadToLocal: "Download all cloud images to local mirror",
+    toggleLinkTitle: "Switch Image Link Mode",
+    toggleLinkDesc: "Switch all image links in the selected scope between local mirror paths and cloud URLs.",
+    toggleLinkCurrent: "Current mode: {mode}",
+    toggleLinkTarget: "Switch to",
+    toggleLinkScope: "Scope",
+    toggleScopeCurrent: "Current note only",
+    toggleScopeVault: "All notes in vault",
+    toggleLinkConfirm: "Confirm Switch",
+    toggleLinkCancel: "Cancel",
+    toggleLinkWorking: "Switching image links...",
+    toggleLinkDone: "Switched {count} image link(s) to {mode}.",
+    linkModeLocal: "Local",
+    linkModeCloud: "Cloud",
+    migrationNoDomain: "Please configure a public access URL and local mirror root first.",
+    migrationWorking: "Downloading cloud images to local mirror...",
+    migrationProgress: "Downloaded {count} image(s)...",
+    migrationDone: "Migration complete: {downloaded} downloaded, {skipped} already exist.",
+    localMirrorRoot: "Local mirror directory",
+    localMirrorRootDesc: "Directory inside your vault to store local copies of uploaded images. Default: 98 cloudflareR2",
+    linkModeLabel: "Default link mode",
+    linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL."
   },
   zh: {
     // Ribbon & Commands
-    ribbonScan: "\u626B\u63CF\u5F53\u524D\u6587\u6863\u56FE\u7247",
+    ribbonScan: "S3 Image Sync Pro: \u9AD8\u7EA7\u83DC\u5355",
     commandScanCurrent: "\u626B\u63CF\u5F53\u524D\u6587\u6863\u56FE\u7247",
     commandScanVault: "\u626B\u63CF\u5168\u5E93\u56FE\u7247\u4F46\u4E0D\u66FF\u6362",
     commandProcessDeletes: "\u5904\u7406\u5EF6\u8FDF\u5220\u9664\u56FE\u7247",
@@ -3981,7 +4005,31 @@ var I18N = {
     syncS3OnNoteMove: "\u79FB\u52A8\u7B14\u8BB0\u65F6\u540C\u6B65 S3 \u56FE\u7247\u8DEF\u5F84",
     syncS3OnNoteMoveDesc: "\u5F53\u7B14\u8BB0\u88AB\u79FB\u52A8\u6216\u91CD\u547D\u540D\u65F6\uFF0C\u81EA\u52A8\u5C06\u5176 S3 \u4E0A\u7684\u56FE\u7247\u8FC1\u79FB\u5230\u5BF9\u5E94\u7684\u65B0\u8DEF\u5F84\uFF0C\u5E76\u66F4\u65B0\u7B14\u8BB0\u4E2D\u7684\u6240\u6709\u94FE\u63A5\u3002",
     s3PathSynced: "\u5DF2\u5C06 {count} \u5F20 S3 \u56FE\u7247\u8FC1\u79FB\u81F3\u65B0\u8DEF\u5F84\u3002",
-    s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}"
+    s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}",
+    // 链接切换与迁移
+    commandToggleLinks: "\u5207\u6362\u56FE\u7247\u94FE\u63A5\uFF08\u672C\u5730 \u2194 \u4E91\u7AEF\uFF09",
+    commandDownloadToLocal: "\u4E00\u952E\u4E0B\u8F7D\u4E91\u7AEF\u56FE\u7247\u81F3\u672C\u5730\u955C\u50CF",
+    toggleLinkTitle: "\u5207\u6362\u56FE\u7247\u94FE\u63A5\u6A21\u5F0F",
+    toggleLinkDesc: "\u5C06\u6240\u9009\u8303\u56F4\u5185\u7684\u6240\u6709\u56FE\u7247\u94FE\u63A5\u5728\u672C\u5730\u955C\u50CF\u8DEF\u5F84\u548C\u4E91\u7AEF URL \u4E4B\u95F4\u5207\u6362\u3002",
+    toggleLinkCurrent: "\u5F53\u524D\u6A21\u5F0F\uFF1A{mode}",
+    toggleLinkTarget: "\u5207\u6362\u5230",
+    toggleLinkScope: "\u4F5C\u7528\u8303\u56F4",
+    toggleScopeCurrent: "\u4EC5\u5F53\u524D\u7B14\u8BB0",
+    toggleScopeVault: "\u5168\u5E93\u6240\u6709\u7B14\u8BB0",
+    toggleLinkConfirm: "\u786E\u8BA4\u5207\u6362",
+    toggleLinkCancel: "\u53D6\u6D88",
+    toggleLinkWorking: "\u6B63\u5728\u5207\u6362\u56FE\u7247\u94FE\u63A5...",
+    toggleLinkDone: "\u5DF2\u5C06 {count} \u4E2A\u56FE\u7247\u94FE\u63A5\u5207\u6362\u4E3A{mode}\u3002",
+    linkModeLocal: "\u672C\u5730",
+    linkModeCloud: "\u4E91\u7AEF",
+    migrationNoDomain: "\u8BF7\u5148\u914D\u7F6E\u516C\u5F00\u8BBF\u95EE URL \u548C\u672C\u5730\u955C\u50CF\u76EE\u5F55\u3002",
+    migrationWorking: "\u6B63\u5728\u4ECE\u4E91\u7AEF\u4E0B\u8F7D\u56FE\u7247\u81F3\u672C\u5730\u955C\u50CF...",
+    migrationProgress: "\u5DF2\u4E0B\u8F7D {count} \u5F20\u56FE\u7247...",
+    migrationDone: "\u8FC1\u79FB\u5B8C\u6210\uFF1A{downloaded} \u5F20\u5DF2\u4E0B\u8F7D\uFF0C{skipped} \u5F20\u5DF2\u5B58\u5728\u3002",
+    localMirrorRoot: "\u672C\u5730\u955C\u50CF\u76EE\u5F55",
+    localMirrorRootDesc: "\u7528\u4E8E\u5B58\u50A8\u4E0A\u4F20\u56FE\u7247\u672C\u5730\u526F\u672C\u7684 Vault \u5185\u76EE\u5F55\u3002\u9ED8\u8BA4\uFF1A98 cloudflareR2",
+    linkModeLabel: "\u9ED8\u8BA4\u94FE\u63A5\u6A21\u5F0F",
+    linkModeDesc: "\u63A7\u5236\u65B0\u56FE\u7247\u94FE\u63A5\u9ED8\u8BA4\u6307\u5411\u672C\u5730\u955C\u50CF\u8FD8\u662F\u4E91\u7AEF URL\u3002"
   }
 };
 function detectLocaleFromApp(getLanguage2) {
@@ -4133,7 +4181,7 @@ var CandidateModal = class extends import_obsidian2.Modal {
         this.updateProgress(state);
       });
       new import_obsidian2.Notice(t2("replacedNotice", { count: result.replaced }));
-      this.renderDeleteConfirmation(result.localFiles || []);
+      this.close();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Attachment replacement failed", error);
@@ -4178,47 +4226,6 @@ var CandidateModal = class extends import_obsidian2.Modal {
     const phaseText = phaseMap[state.phase] || state.phase;
     this.progressText.setText(`${phaseText}: ${state.label || ""} (${state.current || 0}/${total})`);
   }
-  renderDeleteConfirmation(localFiles) {
-    const t2 = (k, p) => this.plugin.t(k, p);
-    const { contentEl } = this;
-    contentEl.empty();
-    const container = contentEl.createDiv({ cls: "attachment-imagebed-manager-modal-content" });
-    const view = container.createDiv({ cls: "attachment-imagebed-manager-delete-view" });
-    view.createEl("h2", { text: t2("linksReplacedTitle") });
-    view.createEl("p", {
-      text: t2("linksReplacedDesc"),
-      cls: "attachment-imagebed-manager-summary"
-    });
-    if (localFiles.length) {
-      const list = view.createDiv({ cls: "attachment-imagebed-manager-delete-list" });
-      for (const fileRecord of localFiles) {
-        const item = list.createDiv({ cls: "attachment-imagebed-manager-delete-item" });
-        item.createDiv({ text: fileRecord.name });
-        item.createDiv({ text: fileRecord.path, cls: "attachment-imagebed-manager-delete-item-path" });
-      }
-    }
-    const actions = view.createDiv({ cls: "attachment-imagebed-manager-delete-actions" });
-    const keepBtn = actions.createEl("button", { text: t2("keepLocal") });
-    keepBtn.addEventListener("click", () => this.close());
-    const deleteBtn = actions.createEl("button", {
-      text: t2("deleteLocal"),
-      cls: "mod-warning"
-    });
-    deleteBtn.addEventListener("click", () => {
-      void (async () => {
-        try {
-          await this.plugin.deleteLocalFileRecords(this.noteFile, localFiles, "manual-delete");
-          new import_obsidian2.Notice(t2("movedToTrash", { count: localFiles.length }));
-          this.close();
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("Attachment local delete failed", error);
-          new import_obsidian2.Notice(t2("localDeleteFailed", { error: message }), 1e4);
-          this.renderError(error instanceof Error ? error : new Error(message));
-        }
-      })();
-    });
-  }
   renderError(error) {
     const t2 = (k, p) => this.plugin.t(k, p);
     const { contentEl } = this;
@@ -4239,13 +4246,15 @@ var CandidateModal = class extends import_obsidian2.Modal {
 // src/dry-run-modal.ts
 var import_obsidian3 = require("obsidian");
 var DryRunModal = class extends import_obsidian3.Modal {
-  constructor(app, plugin, count, samples) {
+  constructor(app, plugin, localCount, remoteCount, samples) {
     super(app);
     __publicField(this, "plugin");
-    __publicField(this, "count");
+    __publicField(this, "localCount");
+    __publicField(this, "remoteCount");
     __publicField(this, "samples");
     this.plugin = plugin;
-    this.count = count;
+    this.localCount = localCount;
+    this.remoteCount = remoteCount;
     this.samples = samples;
   }
   onOpen() {
@@ -4253,7 +4262,11 @@ var DryRunModal = class extends import_obsidian3.Modal {
     const { contentEl } = this;
     contentEl.empty();
     new import_obsidian3.Setting(contentEl).setName(t2("vaultScanTitle")).setHeading();
-    contentEl.createEl("p", { text: t2("vaultScanFound", { count: this.count }) });
+    contentEl.createEl("p", { text: t2("vaultScanFound", { count: this.localCount + this.remoteCount }) });
+    contentEl.createEl("p", {
+      text: `\u672C\u5730\u5019\u9009: ${this.localCount}  |  \u8FDC\u7A0B\u5019\u9009: ${this.remoteCount}`,
+      cls: "attachment-imagebed-manager-meta"
+    });
     if (this.samples.length) {
       contentEl.createEl("pre", {
         text: this.samples.join("\n"),
@@ -4583,25 +4596,18 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         void save();
       })
     );
-    new import_obsidian4.Setting(containerEl).setName(t2("deletePolicy")).setDesc(t2("deletePolicyDesc")).addDropdown((dropdown) => {
-      dropdown.addOption("confirm", t2("deleteConfirm")).addOption("immediate", t2("deleteImmediate"));
-      if (!this.plugin.isMobile) {
-        dropdown.addOption("delayed", t2("deleteDelayed"));
-      }
-      dropdown.setValue(this.plugin.settings.deletePolicy).onChange((value) => {
-        this.plugin.settings.deletePolicy = value;
+    new import_obsidian4.Setting(containerEl).setName(t2("localMirrorRoot")).setDesc(t2("localMirrorRootDesc")).addText(
+      (text) => text.setPlaceholder("98 cloudflareR2").setValue(this.plugin.settings.localMirrorRoot).onChange((value) => {
+        this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
         void save();
-        this.renderSettings();
-      });
-    });
-    if (!this.plugin.isMobile && this.plugin.settings.deletePolicy === "delayed") {
-      new import_obsidian4.Setting(containerEl).setName(t2("deleteDelayHours")).setDesc(t2("deleteDelayHoursDesc")).addText(
-        (text) => text.setValue(String(this.plugin.settings.autoDeleteDelayHours)).onChange((value) => {
-          this.plugin.settings.autoDeleteDelayHours = Math.max(0, Number(value) || 24);
-          debouncedSave();
-        })
-      );
-    }
+      })
+    );
+    new import_obsidian4.Setting(containerEl).setName(t2("linkModeLabel")).setDesc(t2("linkModeDesc")).addDropdown(
+      (dropdown) => dropdown.addOption("local", t2("linkModeLocal")).addOption("cloud", t2("linkModeCloud")).setValue(this.plugin.settings.linkMode).onChange((value) => {
+        this.plugin.settings.linkMode = value;
+        void save();
+      })
+    );
     new import_obsidian4.Setting(containerEl).setName(t2("deleteRemoteOnNoteDelete")).setDesc(t2("deleteRemoteOnNoteDeleteDesc")).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.deleteRemoteOnNoteDelete).onChange((value) => {
         this.plugin.settings.deleteRemoteOnNoteDelete = value;
@@ -4837,13 +4843,6 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     const t2 = (k, p) => this.plugin.t(k, p);
     const settings = this.plugin.settings;
     new import_obsidian4.Setting(containerEl).setName(t2("recentLog")).setHeading();
-    if ((settings.pendingDeletes || []).length) {
-      new import_obsidian4.Setting(containerEl).setName(t2("pendingDeletes")).setHeading();
-      containerEl.createEl("pre", {
-        text: settings.pendingDeletes.slice(0, 20).map((entry) => `${new Date(entry.dueAt).toLocaleString()} ${entry.sourcePath}`).join("\n"),
-        cls: "attachment-imagebed-manager-log"
-      });
-    }
     const logs = (settings.logs || []).slice(0, 20);
     if (logs.length > 0) {
       containerEl.createEl("pre", {
@@ -4859,8 +4858,54 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
   }
 };
 
+// src/link-toggle-modal.ts
+var import_obsidian5 = require("obsidian");
+var LinkToggleModal = class extends import_obsidian5.Modal {
+  constructor(app, plugin) {
+    super(app);
+    __publicField(this, "plugin");
+    __publicField(this, "toggleScope");
+    __publicField(this, "targetMode");
+    this.plugin = plugin;
+    this.toggleScope = "current";
+    this.targetMode = plugin.settings.linkMode === "local" ? "cloud" : "local";
+  }
+  onOpen() {
+    const { contentEl } = this;
+    const t2 = (k, p) => this.plugin.t(k, p);
+    contentEl.createEl("h2", { text: t2("toggleLinkTitle") });
+    contentEl.createEl("p", { text: t2("toggleLinkDesc") });
+    const currentMode = this.plugin.settings.linkMode;
+    contentEl.createEl("p", {
+      text: t2("toggleLinkCurrent", { mode: currentMode === "local" ? t2("linkModeLocal") : t2("linkModeCloud") }),
+      cls: "s3-toggle-current-mode"
+    });
+    new import_obsidian5.Setting(contentEl).setName(t2("toggleLinkTarget")).addDropdown(
+      (dropdown) => dropdown.addOption("local", t2("linkModeLocal")).addOption("cloud", t2("linkModeCloud")).setValue(this.targetMode).onChange((v) => {
+        this.targetMode = v;
+      })
+    );
+    new import_obsidian5.Setting(contentEl).setName(t2("toggleLinkScope")).addDropdown(
+      (dropdown) => dropdown.addOption("current", t2("toggleScopeCurrent")).addOption("vault", t2("toggleScopeVault")).setValue(this.toggleScope).onChange((v) => {
+        this.toggleScope = v;
+      })
+    );
+    new import_obsidian5.Setting(contentEl).addButton(
+      (btn) => btn.setButtonText(t2("toggleLinkConfirm")).setCta().onClick(async () => {
+        this.close();
+        await this.plugin.executeToggleLinks(this.targetMode, this.toggleScope);
+      })
+    ).addButton(
+      (btn) => btn.setButtonText(t2("toggleLinkCancel")).onClick(() => this.close())
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
 // src/plugin.ts
-var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugin {
+var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "locale");
@@ -4871,13 +4916,34 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
   }
   async onload() {
     await this.loadSettings();
-    this.locale = detectLocaleFromApp(import_obsidian5.getLanguage);
-    this.isMobile = import_obsidian5.Platform.isMobile;
+    this.locale = detectLocaleFromApp(import_obsidian6.getLanguage);
+    this.isMobile = import_obsidian6.Platform.isMobile;
     setWasmLoader(async (filename) => {
       return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
     });
-    this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), () => {
-      void this.scanCurrentNote();
+    this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), (evt) => {
+      const menu = new import_obsidian6.Menu();
+      menu.addItem(
+        (item) => item.setTitle(this.t("commandScanCurrent")).setIcon("upload-cloud").onClick(() => {
+          void this.scanCurrentNote();
+        })
+      );
+      menu.addItem(
+        (item) => item.setTitle(this.t("commandScanVault")).setIcon("folder-sync").onClick(() => {
+          void this.scanVaultDryRun();
+        })
+      );
+      menu.addItem(
+        (item) => item.setTitle(this.t("commandToggleLinks")).setIcon("switch").onClick(() => {
+          new LinkToggleModal(this.app, this).open();
+        })
+      );
+      menu.addItem(
+        (item) => item.setTitle(this.t("commandDownloadToLocal")).setIcon("download-cloud").onClick(() => {
+          void this.downloadCloudToLocal();
+        })
+      );
+      menu.showAtMouseEvent(evt);
     });
     this.addCommand({
       id: "scan-current-note",
@@ -4890,32 +4956,29 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       callback: () => this.scanVaultDryRun()
     });
     this.addCommand({
-      id: "process-delayed-deletes",
-      name: this.t("commandProcessDeletes"),
-      callback: () => this.processPendingDeletes()
+      id: "toggle-link-mode",
+      name: this.t("commandToggleLinks"),
+      callback: () => new LinkToggleModal(this.app, this).open()
+    });
+    this.addCommand({
+      id: "download-cloud-to-local",
+      name: this.t("commandDownloadToLocal"),
+      callback: () => this.downloadCloudToLocal()
     });
     this.addSettingTab(new S3ImageSyncSettingTab(this.app, this));
-    if (!this.isMobile) {
-      await this.processPendingDeletes();
-      this.registerInterval(
-        window.setInterval(() => {
-          this.processPendingDeletes().catch((error) => {
-            console.error(this.t("delayedDeleteFailed"), error);
-          });
-        }, 60 * 1e3)
-      );
-    }
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (file instanceof import_obsidian5.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian6.TFile && file.extension === "md") {
           void this.cacheRemoteUrls(file);
         }
       })
     );
     this.registerEvent(
       this.app.vault.on("delete", (file) => {
-        if (file instanceof import_obsidian5.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian6.TFile && file.extension === "md") {
           void this.handleNoteDelete(file.path);
+        } else if (file instanceof import_obsidian6.TFolder) {
+          void this.handleFolderDelete(file.path);
         }
       })
     );
@@ -4932,7 +4995,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     this.configureAutoRemoteTransfer();
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian5.TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
+        if (file instanceof import_obsidian6.TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
           void this.syncS3PathsOnRename(file, oldPath);
         }
       })
@@ -4966,24 +5029,24 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     this.autoScanTimer = window.setInterval(() => {
       this.runAutoScan().catch((error) => {
         console.error("Auto scan failed", error);
-        new import_obsidian5.Notice(this.t("autoScanFailed", { error: error instanceof Error ? error.message : String(error) }));
+        new import_obsidian6.Notice(this.t("autoScanFailed", { error: error instanceof Error ? error.message : String(error) }));
       });
     }, minutes * 60 * 1e3);
   }
   async scanCurrentNote() {
     if (!this.settings.enabled) {
-      new import_obsidian5.Notice(this.t("disabled"));
+      new import_obsidian6.Notice(this.t("disabled"));
       return;
     }
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile || activeFile.extension !== "md") {
-      new import_obsidian5.Notice(this.t("openMarkdownFirst"));
+      new import_obsidian6.Notice(this.t("openMarkdownFirst"));
       return;
     }
     try {
       this.ensureS3Settings();
     } catch (error) {
-      new import_obsidian5.Notice(error instanceof Error ? error.message : String(error));
+      new import_obsidian6.Notice(error instanceof Error ? error.message : String(error));
       return;
     }
     const candidates = await this.findCandidatesInNote(activeFile, {
@@ -4994,22 +5057,22 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     });
     const remoteCandidates = await this.findRemoteCandidatesInNote(activeFile);
     if (candidates.length === 0 && remoteCandidates.length === 0) {
-      new import_obsidian5.Notice(this.t("noCandidatesEither"));
+      new import_obsidian6.Notice(this.t("noCandidatesEither"));
       return;
     }
     if (remoteCandidates.length > 0) {
-      const notice = new import_obsidian5.Notice(this.t("remoteImageFound", { count: remoteCandidates.length }), 0);
+      const notice = new import_obsidian6.Notice(this.t("remoteImageFound", { count: remoteCandidates.length }), 0);
       try {
         const result = await this.transferRemoteImagesInNote(activeFile, remoteCandidates, (state) => {
           notice.setMessage(`${this.t(state.phase === "downloading" ? "downloading" : state.phase === "uploading" ? "phaseUploading" : state.phase === "rewriting" ? "phaseRewriting" : "phaseDone")} ${state.label} (${state.current}/${state.total})`);
         });
         notice.hide();
         if (result.replaced > 0) {
-          new import_obsidian5.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+          new import_obsidian6.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
         }
       } catch (error) {
         notice.hide();
-        new import_obsidian5.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+        new import_obsidian6.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
       }
     }
     if (candidates.length > 0) {
@@ -5018,9 +5081,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
   }
   async scanVaultDryRun() {
     const files = this.app.vault.getMarkdownFiles();
-    let count = 0;
+    let localCount = 0;
+    let remoteCount = 0;
     const samples = [];
-    const notice = new import_obsidian5.Notice(this.t("scanningVault", { current: 0, total: files.length }), 0);
+    const notice = new import_obsidian6.Notice(this.t("scanningVault", { current: 0, total: files.length }), 0);
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (i % 50 === 0) {
@@ -5032,17 +5096,23 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
           enforceAttachmentRoot: true,
           enforceSizeRule: true
         });
-        count += candidates.length;
-        for (const candidate of candidates.slice(0, 3)) {
+        localCount += candidates.length;
+        for (const candidate of candidates.slice(0, 2)) {
           if (samples.length < 20)
-            samples.push(`${file.path} -> ${candidate.file.path}`);
+            samples.push(`[\u672C\u5730] ${file.path} -> ${candidate.file.path}`);
+        }
+        const remoteCandidates = await this.findRemoteCandidatesInNote(file);
+        remoteCount += remoteCandidates.length;
+        for (const rc of remoteCandidates.slice(0, 2)) {
+          if (samples.length < 20)
+            samples.push(`[\u8FDC\u7A0B] ${file.path} -> ${rc.url}`);
         }
       } catch (error) {
         console.error(`Dry-run scan error for ${file.path}:`, error);
       }
     }
     notice.hide();
-    new DryRunModal(this.app, this, count, samples).open();
+    new DryRunModal(this.app, this, localCount, remoteCount, samples).open();
   }
   async runAutoScan() {
     if (!this.settings.enabled || !this.settings.autoScanEnabled)
@@ -5073,16 +5143,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         });
         if (quietCandidates.length === 0)
           continue;
-        const result = await this.replaceCandidates(file, quietCandidates, null, {
-          deleteMode: "delayed"
-        });
+        const result = await this.replaceCandidates(file, quietCandidates, null);
         replaced += result.replaced;
       } catch (error) {
         console.error(`Auto-scan error for ${file.path}:`, error);
       }
     }
     if (replaced > 0)
-      new import_obsidian5.Notice(this.t("autoScanReplaced", { count: replaced }));
+      new import_obsidian6.Notice(this.t("autoScanReplaced", { count: replaced }));
   }
   isQuiet(file) {
     const quietMs = Math.max(0, Number(this.settings.quietSeconds) || 0) * 1e3;
@@ -5096,7 +5164,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     const byKey = /* @__PURE__ */ new Map();
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
-      if (!targetFile || !(targetFile instanceof import_obsidian5.TFile))
+      if (!targetFile || !(targetFile instanceof import_obsidian6.TFile))
         continue;
       if (options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
         continue;
@@ -5138,15 +5206,15 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       decoded = target;
     }
     const direct = this.app.vault.getAbstractFileByPath(decoded);
-    if (direct instanceof import_obsidian5.TFile)
+    if (direct instanceof import_obsidian6.TFile)
       return direct;
     const fromCache = this.app.metadataCache.getFirstLinkpathDest(decoded, noteFile.path);
-    if (fromCache instanceof import_obsidian5.TFile)
+    if (fromCache instanceof import_obsidian6.TFile)
       return fromCache;
     const noteDir = noteFile.parent ? noteFile.parent.path : "";
     const relativePath = noteDir ? `${noteDir}/${decoded}` : decoded;
     const relative = this.app.vault.getAbstractFileByPath(relativePath);
-    return relative instanceof import_obsidian5.TFile ? relative : null;
+    return relative instanceof import_obsidian6.TFile ? relative : null;
   }
   isUnderAttachmentRoot(file) {
     const root = trimSlashes(this.settings.attachmentRoot || "90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6");
@@ -5171,8 +5239,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     const minSize = Math.max(0, minMiB) * 1024 * 1024;
     return file.stat.size >= minSize;
   }
-  async replaceCandidates(noteFile, candidates, progress, options = {}) {
-    const deleteMode = options.deleteMode || this.settings.deletePolicy || "confirm";
+  async replaceCandidates(noteFile, candidates, progress) {
     this.ensureS3Settings();
     let noteChanged = false;
     let replaced = 0;
@@ -5203,7 +5270,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
           });
         }
         for (const ref of candidate.refs) {
-          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, upload.publicUrl));
+          const targetUrl = this.settings.linkMode === "local" && upload.localPath ? upload.localPath.split("/").map(encodeURIComponent).join("/") : upload.publicUrl;
+          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl));
         }
       }
       progress?.({
@@ -5235,32 +5303,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     const localFiles = this.buildLocalFileRecords(candidates, uploaded);
     for (const candidate of candidates)
       replaced += candidate.refs.length;
-    if (deleteMode === "delayed") {
-      progress?.({
-        phase: "scheduling",
-        current: completedUploads,
-        total: uniqueFiles,
-        label: this.t("phaseScheduling")
-      });
-      this.scheduleDelayedDeletes(noteFile, localFiles);
-    } else if (deleteMode === "immediate") {
+    if (localFiles.length > 0) {
       progress?.({
         phase: "trashing",
         current: completedUploads,
         total: uniqueFiles,
         label: this.t("phaseTrashing")
       });
-      await this.deleteLocalFileRecords(noteFile, localFiles, "manual-delete");
-    } else {
-      for (const fileRecord of localFiles) {
-        this.addLog({
-          status: "replaced-awaiting-delete-confirm",
-          notePath: noteFile.path,
-          sourcePath: fileRecord.path,
-          remoteUrl: fileRecord.remoteUrl,
-          trashed: false
-        });
-      }
+      await this.deleteLocalFileRecords(noteFile, localFiles, "immediate");
     }
     await this.saveSettings();
     progress?.({
@@ -5271,10 +5321,50 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     });
     return { replaced, localFiles };
   }
+  async ensureFolderExists(path) {
+    const folders = path.split("/");
+    let current = "";
+    for (const folder of folders) {
+      if (folder === "")
+        continue;
+      current = current === "" ? folder : `${current}/${folder}`;
+      const abstractFile = this.app.vault.getAbstractFileByPath(current);
+      if (!abstractFile) {
+        try {
+          await this.app.vault.createFolder(current);
+        } catch (e) {
+          if (!e.message?.includes("Folder already exists")) {
+            console.warn(`Failed to create folder ${current}:`, e);
+          }
+        }
+      }
+    }
+  }
   async uploadBuffer(binary, originalName, noteFile) {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
-    let ext = (originalName.split(".").pop() || "").toLowerCase();
+    let originalExt = "";
+    const parts = originalName.split(".");
+    if (parts.length > 1) {
+      originalExt = parts.pop().toLowerCase();
+    }
+    if (!originalExt || !["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "heic", "tiff", "ico"].includes(originalExt)) {
+      if (body.length >= 4) {
+        if (body[0] === 137 && body[1] === 80 && body[2] === 78 && body[3] === 71)
+          originalExt = "png";
+        else if (body[0] === 255 && body[1] === 216)
+          originalExt = "jpg";
+        else if (body[0] === 71 && body[1] === 73 && body[2] === 70)
+          originalExt = "gif";
+        else if (body[0] === 82 && body[1] === 73 && body[2] === 70 && body[3] === 70)
+          originalExt = "webp";
+        else
+          originalExt = "png";
+      } else {
+        originalExt = "png";
+      }
+    }
+    let ext = originalExt;
     let contentType = contentTypeForExt(ext);
     if (this.settings.webpEnabled && !this.settings.webpSkipFormats.includes(ext)) {
       try {
@@ -5287,7 +5377,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         ext = compressed.ext;
         contentType = compressed.contentType;
       } catch (error) {
-        new import_obsidian5.Notice(`WebP compression failed: ${error instanceof Error ? error.message : String(error)}`);
+        new import_obsidian6.Notice(`WebP compression failed: ${error instanceof Error ? error.message : String(error)}`);
         console.warn(`WebP compression failed for ${originalName}, uploading original:`, error);
       }
     }
@@ -5301,6 +5391,17 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       notedir: noteDir,
       notename: noteName
     });
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    let localPath;
+    if (mirrorRoot) {
+      const keyStem = key.replace(/\.[^/.]+$/, "");
+      localPath = `${mirrorRoot}/${keyStem}.${originalExt}`;
+      const existing = this.app.vault.getAbstractFileByPath(localPath);
+      if (existing instanceof import_obsidian6.TFile) {
+        const publicUrl2 = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
+        return { key, publicUrl: publicUrl2, localPath };
+      }
+    }
     await putS3Object(
       this.settings.s3,
       key,
@@ -5309,7 +5410,25 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       (status, text) => this.t("uploadFailed", { status, text }),
       hash
     );
-    return { key, publicUrl: buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key) };
+    const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
+    if (mirrorRoot && localPath) {
+      try {
+        const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
+        if (parentDir) {
+          await this.ensureFolderExists(parentDir);
+        }
+        const existing = this.app.vault.getAbstractFileByPath(localPath);
+        if (existing instanceof import_obsidian6.TFile) {
+          await this.app.vault.modifyBinary(existing, binary);
+        } else {
+          await this.app.vault.createBinary(localPath, binary);
+        }
+      } catch (error) {
+        console.warn(`Failed to write local mirror at ${localPath}:`, error);
+        localPath = void 0;
+      }
+    }
+    return { key, publicUrl, localPath };
   }
   async uploadCandidate(candidate, noteFile) {
     const binary = await this.app.vault.readBinary(candidate.file);
@@ -5340,36 +5459,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     }
     return Array.from(byPath.values());
   }
-  scheduleDelayedDeletes(noteFile, localFiles) {
-    const delayMs = Math.max(0, Number(this.settings.autoDeleteDelayHours) || 0) * 60 * 60 * 1e3;
-    const dueAt = Date.now() + delayMs;
-    const existing = new Set(
-      (this.settings.pendingDeletes || []).map((entry) => entry.sourcePath)
-    );
-    for (const fileRecord of localFiles) {
-      if (!existing.has(fileRecord.path)) {
-        this.settings.pendingDeletes.push({
-          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-          dueAt,
-          notePath: noteFile.path,
-          sourcePath: fileRecord.path,
-          remoteUrl: fileRecord.remoteUrl
-        });
-      }
-      this.addLog({
-        status: "scheduled-delayed-delete",
-        notePath: noteFile.path,
-        sourcePath: fileRecord.path,
-        remoteUrl: fileRecord.remoteUrl,
-        trashed: false,
-        dueAt: new Date(dueAt).toISOString()
-      });
-    }
-  }
   async deleteLocalFileRecords(noteFile, localFiles, status) {
     for (const fileRecord of localFiles) {
       const file = this.app.vault.getAbstractFileByPath(fileRecord.path);
-      if (!(file instanceof import_obsidian5.TFile)) {
+      if (!(file instanceof import_obsidian6.TFile)) {
         this.addLog({
           status: `${status}-missing-local-file`,
           notePath: noteFile.path,
@@ -5379,7 +5472,11 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         });
         continue;
       }
-      await this.app.fileManager.trashFile(file);
+      try {
+        await this.app.fileManager.trashFile(file);
+      } catch (e) {
+        console.warn(`Trash failed for ${file.path}, maybe already deleted or locked:`, e);
+      }
       this.addLog({
         status,
         notePath: noteFile.path,
@@ -5387,31 +5484,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         remoteUrl: fileRecord.remoteUrl,
         trashed: true
       });
-    }
-    this.settings.pendingDeletes = (this.settings.pendingDeletes || []).filter(
-      (entry) => !localFiles.some((f) => f.path === entry.sourcePath)
-    );
-    await this.saveSettings();
-  }
-  async processPendingDeletes() {
-    const pending = Array.isArray(this.settings.pendingDeletes) ? this.settings.pendingDeletes : [];
-    const now = Date.now();
-    const due = pending.filter((entry) => Number(entry.dueAt) <= now);
-    if (due.length === 0)
-      return;
-    const remaining = pending.filter((entry) => Number(entry.dueAt) > now);
-    this.settings.pendingDeletes = remaining;
-    for (const entry of due) {
-      try {
-        const noteFile = this.app.vault.getAbstractFileByPath(entry.notePath);
-        await this.deleteLocalFileRecords(
-          noteFile instanceof import_obsidian5.TFile ? noteFile : { path: entry.notePath },
-          [{ path: entry.sourcePath, name: basename2(entry.sourcePath), remoteUrl: entry.remoteUrl }],
-          "delayed-delete"
-        );
-      } catch (error) {
-        console.error(`Delayed delete failed for ${entry.sourcePath}:`, error);
-      }
     }
     await this.saveSettings();
   }
@@ -5422,8 +5494,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       "endpoint",
       "bucketName",
       "accessKeyId",
-      "secretAccessKey",
-      "customDomainName"
+      "secretAccessKey"
     ]) {
       if (!String(s3[key] || "").trim())
         missing.push(key);
@@ -5441,37 +5512,85 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     this.settings.logs.unshift(obj);
     this.settings.logs = this.settings.logs.slice(0, 100);
   }
-  extractRemoteUrls(text) {
-    const domain = this.settings.s3.customDomainName;
-    if (!domain)
-      return [];
-    let cleanDomain = domain.replace(/\/+$/, "");
-    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
-      cleanDomain = `https://${cleanDomain}`;
+  getCloudUrlPrefix() {
+    const s3 = this.settings.s3;
+    let base = String(s3.customDomainName || "").replace(/\/+$/, "");
+    if (!base) {
+      let cleanEndpoint = String(s3.endpoint || "").replace(/\/+$/, "");
+      if (cleanEndpoint && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanEndpoint)) {
+        cleanEndpoint = `https://${cleanEndpoint}`;
+      }
+      base = `${cleanEndpoint}/${s3.bucketName}`;
+    } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(base)) {
+      base = `https://${base}`;
     }
-    const escaped = cleanDomain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`${escaped}/[^\\s)\\]"'>]+`, "g");
-    const urls = [];
+    return base;
+  }
+  extractRemoteUrls(text) {
+    const keys = [];
+    const domainPrefix = this.getCloudUrlPrefix();
+    if (!domainPrefix)
+      return keys;
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    const regex = /!\[[^\]]*\]\(([^)]+)\)/g;
     let match;
     while ((match = regex.exec(text)) !== null) {
-      urls.push(match[0]);
+      const url = match[1];
+      if (url.startsWith(domainPrefix)) {
+        keys.push(this.remoteUrlToS3Key(url));
+      } else if (mirrorRoot) {
+        const decodedUrl = decodeURIComponent(url);
+        if (decodedUrl.startsWith(mirrorRoot)) {
+          try {
+            const relativePath = decodedUrl.substring(mirrorRoot.length + 1);
+            const stem = relativePath.replace(/\.[^/.]+$/, "");
+            const cloudExt = this.guessCloudExt(relativePath);
+            keys.push(`${stem}.${cloudExt}`);
+          } catch (e) {
+          }
+        }
+      }
     }
-    return [...new Set(urls)];
+    return [...new Set(keys)];
   }
   remoteUrlToS3Key(url) {
-    let cleanDomain = this.settings.s3.customDomainName.replace(/\/+$/, "");
-    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(cleanDomain)) {
-      cleanDomain = `https://${cleanDomain}`;
-    }
-    const key = url.slice(cleanDomain.length + 1);
+    const prefix = this.getCloudUrlPrefix();
+    const key = url.slice(prefix.length + 1);
     return decodeURIComponent(key);
   }
   async cacheRemoteUrls(file) {
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
     try {
-      const text = await this.app.vault.cachedRead(file);
+      const text = await this.app.vault.read(file);
       const urls = this.extractRemoteUrls(text);
+      const oldUrls = this.noteRemoteUrls.get(file.path) || [];
+      const removedUrls = oldUrls.filter((u) => !urls.includes(u));
+      if (removedUrls.length > 0) {
+        const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+        for (const key of removedUrls) {
+          try {
+            await deleteS3Object(this.settings.s3, key);
+          } catch (e) {
+            console.warn(`Failed to delete orphan S3 object ${key}:`, e);
+          }
+          if (mirrorRoot) {
+            const stem = key.replace(/\.[^/.]+$/, "");
+            const exts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
+            for (const ext of exts) {
+              const localPath = `${mirrorRoot}/${stem}.${ext}`;
+              const localFile = this.app.vault.getAbstractFileByPath(localPath);
+              if (localFile) {
+                try {
+                  await this.app.vault.trash(localFile, true);
+                } catch {
+                }
+                break;
+              }
+            }
+          }
+        }
+      }
       if (urls.length > 0) {
         this.noteRemoteUrls.set(file.path, urls);
       } else {
@@ -5486,33 +5605,52 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       await this.cacheRemoteUrls(file);
     }
   }
+  async handleFolderDelete(folderPath) {
+    const notesToDelete = [];
+    for (const notePath of this.noteRemoteUrls.keys()) {
+      if (notePath.startsWith(folderPath + "/")) {
+        notesToDelete.push(notePath);
+      }
+    }
+    for (const notePath of notesToDelete) {
+      await this.handleNoteDelete(notePath);
+    }
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (mirrorRoot) {
+      const localFolder = `${mirrorRoot}/${folderPath}`;
+      const existing = this.app.vault.getAbstractFileByPath(localFolder);
+      if (existing instanceof import_obsidian6.TFolder) {
+        await this.app.vault.trash(existing, true).catch(() => {
+        });
+      }
+    }
+  }
   async handleNoteDelete(notePath) {
+    await this.cleanupLocalMirrorForNote(notePath);
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
-    if (!this.settings.s3.customDomainName)
-      return;
-    const urls = this.noteRemoteUrls.get(notePath);
-    if (!urls || urls.length === 0)
+    const keys = this.noteRemoteUrls.get(notePath);
+    if (!keys || keys.length === 0)
       return;
     this.noteRemoteUrls.delete(notePath);
-    for (const url of urls) {
+    for (const key of keys) {
       try {
-        const key = this.remoteUrlToS3Key(url);
         await deleteS3Object(this.settings.s3, key);
         this.addLog({
           status: "remote-deleted-on-note-delete",
           notePath,
           sourcePath: "",
-          remoteUrl: url,
+          remoteUrl: key,
+          // Log the key
           trashed: false
         });
       } catch (error) {
-        console.error(`Failed to delete remote object for ${url}:`, error);
+        console.error(`Failed to delete remote object for ${key}:`, error);
         this.addLog({
           status: "remote-delete-failed",
           notePath,
           sourcePath: "",
-          remoteUrl: url,
+          remoteUrl: key,
           trashed: false
         });
       }
@@ -5530,7 +5668,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     try {
       this.ensureS3Settings();
     } catch (e) {
-      new import_obsidian5.Notice(this.t("missingS3", { settings: e.message }));
+      new import_obsidian6.Notice(this.t("missingS3", { settings: e.message }));
       return;
     }
     await this.handlePastedImages(images, editor, info.file);
@@ -5546,7 +5684,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     try {
       this.ensureS3Settings();
     } catch (e) {
-      new import_obsidian5.Notice(this.t("missingS3", { settings: e.message }));
+      new import_obsidian6.Notice(this.t("missingS3", { settings: e.message }));
       return;
     }
     await this.handlePastedImages(images, editor, info.file);
@@ -5559,8 +5697,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       editor.replaceSelection(placeholder + "\n");
       try {
         const buffer = await file.arrayBuffer();
-        const result = await this.uploadBuffer(buffer, originalName, noteFile || void 0);
-        const replacement = `![${escapeMarkdownLabel(originalName)}](${result.publicUrl})`;
+        const effectiveNoteFile = noteFile || this.app.workspace.getActiveFile() || void 0;
+        const result = await this.uploadBuffer(buffer, originalName, effectiveNoteFile);
+        const targetUrl = this.settings.linkMode === "local" && result.localPath ? result.localPath.split("/").map(encodeURIComponent).join("/") : result.publicUrl;
+        const replacement = `![${escapeMarkdownLabel(originalName)}](${targetUrl})`;
         for (let i = 0; i < editor.lineCount(); i++) {
           const line = editor.getLine(i);
           if (line.includes(placeholder)) {
@@ -5569,7 +5709,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
           }
         }
       } catch (error) {
-        new import_obsidian5.Notice(`Failed to upload ${originalName}: ${error instanceof Error ? error.message : String(error)}`);
+        new import_obsidian6.Notice(`Failed to upload ${originalName}: ${error instanceof Error ? error.message : String(error)}`);
         for (let i = 0; i < editor.lineCount(); i++) {
           const line = editor.getLine(i);
           if (line.includes(placeholder)) {
@@ -5616,14 +5756,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     const maxBytes = Math.max(0, this.settings.remoteImageMaxSizeMiB || 10) * 1024 * 1024;
     for (let attempt = 0; attempt <= _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES; attempt++) {
       try {
-        const response = await (0, import_obsidian5.requestUrl)({
+        const response = await (0, import_obsidian6.requestUrl)({
           url,
           method: "GET",
           throw: false
         });
         if (response.status >= 400) {
           if ((response.status === 429 || response.status >= 500) && attempt < _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES) {
-            new import_obsidian5.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+            new import_obsidian6.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
             await new Promise((r) => window.setTimeout(r, _S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
             continue;
           }
@@ -5643,7 +5783,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
           const isFormattedError = error instanceof Error && (error.message.startsWith("HTTP ") || error.message.startsWith("Not an image") || error.message.includes("MiB"));
           if (isFormattedError)
             throw error;
-          new import_obsidian5.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
+          new import_obsidian6.Notice(this.t("downloadRetrying", { attempt: attempt + 1, max: _S3ImageSyncPlugin.DOWNLOAD_MAX_RETRIES }));
           await new Promise((r) => window.setTimeout(r, _S3ImageSyncPlugin.DOWNLOAD_BASE_DELAY_MS * Math.pow(2, attempt)));
           continue;
         }
@@ -5677,14 +5817,15 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
           label: originalName
         });
         const result = await this.uploadBuffer(buffer, originalName, noteFile);
+        const targetUrl = this.settings.linkMode === "local" && result.localPath ? result.localPath.split("/").map(encodeURIComponent).join("/") : result.publicUrl;
         for (const ref of candidate.refs) {
-          const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${result.publicUrl})`;
+          const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${targetUrl})`;
           replacementMap.set(ref.raw, newMarkdown);
         }
         completed++;
       } catch (error) {
         console.warn(`Failed to transfer remote image ${candidate.url}:`, error);
-        new import_obsidian5.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
+        new import_obsidian6.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
         completed++;
       }
     }
@@ -5719,7 +5860,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
       return;
     this.registerEvent(
       this.app.vault.on("create", (file) => {
-        if (!(file instanceof import_obsidian5.TFile) || file.extension !== "md")
+        if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
           return;
         if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
           return;
@@ -5735,7 +5876,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
     );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
-        if (!(file instanceof import_obsidian5.TFile) || file.extension !== "md")
+        if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
           return;
         if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
           return;
@@ -5762,10 +5903,189 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         return;
       const result = await this.transferRemoteImagesInNote(file, candidates);
       if (result.replaced > 0) {
-        new import_obsidian5.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+        new import_obsidian6.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
       }
     } catch (error) {
       console.error(`Auto remote transfer failed for ${file.path}:`, error);
+    }
+  }
+  // ─── Link Mode Toggle ──────────────────────────────────────────────
+  async executeToggleLinks(targetMode, scope) {
+    const files = scope === "vault" ? this.app.vault.getMarkdownFiles() : [this.app.workspace.getActiveFile()].filter((f) => f instanceof import_obsidian6.TFile && f.extension === "md");
+    if (files.length === 0) {
+      new import_obsidian6.Notice(this.t("openMarkdownFirst"));
+      return;
+    }
+    let totalChanged = 0;
+    const notice = new import_obsidian6.Notice(this.t("toggleLinkWorking"), 0);
+    for (const file of files) {
+      try {
+        const changed = await this.toggleLinksInNote(file, targetMode);
+        totalChanged += changed;
+      } catch (error) {
+        console.error(`Toggle links failed for ${file.path}:`, error);
+      }
+    }
+    notice.hide();
+    this.settings.linkMode = targetMode;
+    await this.saveSettings();
+    new import_obsidian6.Notice(this.t("toggleLinkDone", { count: totalChanged, mode: targetMode === "local" ? this.t("linkModeLocal") : this.t("linkModeCloud") }));
+  }
+  async toggleLinksInNote(noteFile, targetMode) {
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (!ownDomain || !mirrorRoot)
+      return 0;
+    const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
+    let changed = 0;
+    await this.app.vault.process(noteFile, (content) => {
+      let next = content;
+      if (targetMode === "local") {
+        const cloudRegex = new RegExp(
+          `(!\\[[^\\]]*\\])\\(${this.escapeRegex(domainPrefix)}/([^)]+)\\)`,
+          "g"
+        );
+        next = next.replace(cloudRegex, (_match, labelPart, cloudKeyEncoded) => {
+          const cloudKey = decodeURIComponent(cloudKeyEncoded);
+          const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
+          if (localFile) {
+            changed++;
+            const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
+            return `${labelPart}(${encodedLocal})`;
+          }
+          return _match;
+        });
+      } else {
+        const mirrorPattern = this.escapeRegex(mirrorRoot).replace(/ /g, "(?: |%20)");
+        const localRegex = new RegExp(
+          `(!\\[[^\\]]*\\])\\(${mirrorPattern}/([^)]+)\\)`,
+          "g"
+        );
+        next = next.replace(localRegex, (_match, labelPart, relativePathEncoded) => {
+          const relativePath = decodeURIComponent(relativePathEncoded);
+          const stem = relativePath.replace(/\.[^/.]+$/, "");
+          const cloudExt = this.guessCloudExt(relativePath);
+          const cloudKey = `${stem}.${cloudExt}`;
+          const cloudUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, cloudKey);
+          changed++;
+          return `${labelPart}(${cloudUrl})`;
+        });
+      }
+      return next;
+    });
+    return changed;
+  }
+  findLocalMirrorForCloudKey(cloudKey, mirrorRoot) {
+    const stem = cloudKey.replace(/\.[^/.]+$/, "");
+    const localDir = `${mirrorRoot}/${stem.substring(0, stem.lastIndexOf("/") >= 0 ? stem.lastIndexOf("/") : stem.length)}`;
+    const baseName = stem.split("/").pop() || "";
+    const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
+    const exactExt = cloudKey.split(".").pop();
+    if (exactExt && !candidates.includes(exactExt.toLowerCase())) {
+      candidates.push(exactExt);
+    }
+    for (const ext of candidates) {
+      const tryPath = `${mirrorRoot}/${stem}.${ext}`;
+      if (this.app.vault.getAbstractFileByPath(tryPath)) {
+        return tryPath;
+      }
+    }
+    return null;
+  }
+  guessCloudExt(localRelativePath) {
+    const localExt = (localRelativePath.split(".").pop() || "").toLowerCase();
+    if (this.settings.webpEnabled && !this.settings.webpSkipFormats.includes(localExt)) {
+      return "webp";
+    }
+    return localExt;
+  }
+  escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  // ─── Cloud �?Local Migration ───────────────────────────────────────
+  async downloadCloudToLocal() {
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new import_obsidian6.Notice(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (!ownDomain || !mirrorRoot) {
+      new import_obsidian6.Notice(this.t("migrationNoDomain"));
+      return;
+    }
+    const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
+    const files = this.app.vault.getMarkdownFiles();
+    let downloaded = 0;
+    let skipped = 0;
+    let failed = 0;
+    const notice = new import_obsidian6.Notice(this.t("migrationWorking"), 0);
+    for (const file of files) {
+      const cloudKeys = this.extractRemoteUrls(await this.app.vault.read(file));
+      for (const cloudKey of cloudKeys) {
+        const localStem = cloudKey.replace(/\.[^/.]+$/, "");
+        if (this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot)) {
+          skipped++;
+          continue;
+        }
+        const cloudUrl = buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          cloudKey
+        );
+        try {
+          const response = await (0, import_obsidian6.requestUrl)({ url: cloudUrl, method: "GET", throw: false });
+          if (response.status >= 400) {
+            console.warn(`DownloadCloudToLocal: HTTP ${response.status} for ${cloudKey}`);
+            failed++;
+            continue;
+          }
+          const cloudExt = (cloudKey.split(".").pop() || "webp").toLowerCase();
+          const localPath = `${mirrorRoot}/${localStem}.${cloudExt}`;
+          const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
+          if (parentDir) {
+            await this.ensureFolderExists(parentDir);
+          }
+          await this.app.vault.createBinary(localPath, response.arrayBuffer);
+          downloaded++;
+          notice.setMessage(this.t("migrationProgress", { count: downloaded }));
+        } catch (error) {
+          console.warn(`Failed to download ${cloudKey}:`, error);
+          failed++;
+        }
+      }
+    }
+    notice.hide();
+    const msgParts = [`\u4E0B\u8F7D: ${downloaded}`, `\u8DF3\u8FC7: ${skipped}`];
+    if (failed > 0)
+      msgParts.push(`\u5931\u8D25: ${failed}`);
+    new import_obsidian6.Notice(`\u8FC1\u79FB\u5B8C\u6210 \u2014 ${msgParts.join("  |  ")}`);
+  }
+  // ─── Note Delete �?Mirror Cleanup ──────────────────────────────────
+  async cleanupLocalMirrorForNote(notePath) {
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (!mirrorRoot)
+      return;
+    const noteDir = notePath.substring(0, notePath.lastIndexOf("/")) || "";
+    const noteName = notePath.substring(notePath.lastIndexOf("/") + 1).replace(/\.md$/, "");
+    const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
+    const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+    const mirrorDir = noteDir ? `${mirrorRoot}/${sanitizeDir(noteDir)}/${sanitizeName(noteName)}` : `${mirrorRoot}/${sanitizeName(noteName)}`;
+    const folder = this.app.vault.getAbstractFileByPath(mirrorDir);
+    if (!(folder instanceof import_obsidian6.TFolder))
+      return;
+    for (const child of folder.children) {
+      try {
+        await this.app.vault.trash(child, true);
+      } catch {
+      }
+    }
+    try {
+      await this.app.vault.trash(folder, true);
+    } catch {
     }
   }
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
@@ -5841,7 +6161,26 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian5.Plugi
         return next;
       });
       await this.saveSettings();
-      new import_obsidian5.Notice(this.t("s3PathSynced", { count: movedCount }));
+      new import_obsidian6.Notice(this.t("s3PathSynced", { count: movedCount }));
+    }
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (mirrorRoot) {
+      const oldMirrorDir = oldDir ? `${mirrorRoot}/${sanitizeDir(oldDir)}/${sanitizeName(oldName)}` : `${mirrorRoot}/${sanitizeName(oldName)}`;
+      const newMirrorDir = newDir ? `${mirrorRoot}/${sanitizeDir(newDir)}/${sanitizeName(newName)}` : `${mirrorRoot}/${sanitizeName(newName)}`;
+      if (oldMirrorDir !== newMirrorDir) {
+        const oldFolder = this.app.vault.getAbstractFileByPath(oldMirrorDir);
+        if (oldFolder) {
+          try {
+            const newParent = newMirrorDir.substring(0, newMirrorDir.lastIndexOf("/"));
+            if (newParent && !this.app.vault.getAbstractFileByPath(newParent)) {
+              await this.app.vault.createFolder(newParent);
+            }
+            await this.app.vault.rename(oldFolder, newMirrorDir);
+          } catch (error) {
+            console.warn(`Failed to move mirror directory ${oldMirrorDir} -> ${newMirrorDir}:`, error);
+          }
+        }
+      }
     }
   }
 };

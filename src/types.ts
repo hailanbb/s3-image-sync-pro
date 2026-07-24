@@ -1,7 +1,6 @@
 import { TFile } from "obsidian";
 
 export type S3Provider = "r2" | "s3" | "minio" | "custom";
-export type DeletePolicy = "confirm" | "immediate" | "delayed";
 export type ReplacementType = "image" | "markdown" | "audio" | "video";
 
 export interface S3Config {
@@ -22,15 +21,12 @@ export interface PluginSettings {
   quietSeconds: number;
   autoScanMinSizeMiB: number;
   attachmentRoot: string;
-  deletePolicy: DeletePolicy;
-  autoDeleteDelayHours: number;
   s3: S3Config;
   enabledExtensions: string[];
   minSizeRules: Record<string, number>;
   autoCandidateExts: string[];
   customExtensions: string[];
   customReplacements: Record<string, ReplacementType>;
-  pendingDeletes: PendingDelete[];
   webpEnabled: boolean;
   webpQuality: number;
   webpSkipFormats: string[];
@@ -39,6 +35,8 @@ export interface PluginSettings {
   autoTransferRemoteImages: boolean;
   remoteImageMaxSizeMiB: number;
   syncS3OnNoteMove: boolean;
+  localMirrorRoot: string;
+  linkMode: "local" | "cloud";
   logs: LogEntry[];
 }
 
@@ -76,13 +74,7 @@ export interface Candidate {
   sizeBytes: number;
 }
 
-export interface PendingDelete {
-  createdAt: string;
-  dueAt: number;
-  notePath: string;
-  sourcePath: string;
-  remoteUrl: string;
-}
+
 
 export interface LogEntry {
   time: string;
@@ -91,7 +83,6 @@ export interface LogEntry {
   sourcePath: string;
   remoteUrl: string;
   trashed?: boolean;
-  dueAt?: string;
 }
 
 export interface ProgressState {
@@ -104,6 +95,7 @@ export interface ProgressState {
 export interface UploadResult {
   key: string;
   publicUrl: string;
+  localPath?: string;
 }
 
 export interface LocalFileRecord {

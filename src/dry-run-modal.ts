@@ -3,13 +3,15 @@ import type S3ImageSyncPlugin from "./plugin";
 
 export class DryRunModal extends Modal {
   plugin: S3ImageSyncPlugin;
-  count: number;
+  localCount: number;
+  remoteCount: number;
   samples: string[];
 
-  constructor(app: App, plugin: S3ImageSyncPlugin, count: number, samples: string[]) {
+  constructor(app: App, plugin: S3ImageSyncPlugin, localCount: number, remoteCount: number, samples: string[]) {
     super(app);
     this.plugin = plugin;
-    this.count = count;
+    this.localCount = localCount;
+    this.remoteCount = remoteCount;
     this.samples = samples;
   }
 
@@ -18,7 +20,11 @@ export class DryRunModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     new Setting(contentEl).setName(t("vaultScanTitle")).setHeading();
-    contentEl.createEl("p", { text: t("vaultScanFound", { count: this.count }) });
+    contentEl.createEl("p", { text: t("vaultScanFound", { count: this.localCount + this.remoteCount }) });
+    contentEl.createEl("p", {
+      text: `本地候选: ${this.localCount}  |  远程候选: ${this.remoteCount}`,
+      cls: "attachment-imagebed-manager-meta",
+    });
     if (this.samples.length) {
       contentEl.createEl("pre", {
         text: this.samples.join("\n"),

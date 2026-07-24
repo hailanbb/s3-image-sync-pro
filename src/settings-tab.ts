@@ -1,7 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type S3ImageSyncPlugin from "./plugin";
 import { FILE_CATEGORIES } from "./file-categories";
-import { FileCategory, DeletePolicy, S3Provider, S3Config } from "./types";
+import { FileCategory, S3Provider, S3Config } from "./types";
 import { debounce } from "./utils";
 import { testS3Connection } from "./s3-client";
 
@@ -253,35 +253,32 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("deletePolicy"))
-      .setDesc(t("deletePolicyDesc"))
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption("confirm", t("deleteConfirm"))
-          .addOption("immediate", t("deleteImmediate"));
-        if (!this.plugin.isMobile) {
-          dropdown.addOption("delayed", t("deleteDelayed"));
-        }
-        dropdown
-          .setValue(this.plugin.settings.deletePolicy)
+      .setName(t("localMirrorRoot"))
+      .setDesc(t("localMirrorRootDesc"))
+      .addText((text) =>
+        text
+          .setPlaceholder("98 cloudflareR2")
+          .setValue(this.plugin.settings.localMirrorRoot)
           .onChange((value) => {
-            this.plugin.settings.deletePolicy = value as DeletePolicy;
+            this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
             void save();
-            this.renderSettings();
-          });
-      });
-
-    if (!this.plugin.isMobile && this.plugin.settings.deletePolicy === "delayed") {
-      new Setting(containerEl)
-        .setName(t("deleteDelayHours"))
-        .setDesc(t("deleteDelayHoursDesc"))
-        .addText((text) =>
-          text.setValue(String(this.plugin.settings.autoDeleteDelayHours)).onChange((value) => {
-            this.plugin.settings.autoDeleteDelayHours = Math.max(0, Number(value) || 24);
-            debouncedSave();
           })
-        );
-    }
+      );
+
+    new Setting(containerEl)
+      .setName(t("linkModeLabel"))
+      .setDesc(t("linkModeDesc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("local", t("linkModeLocal"))
+          .addOption("cloud", t("linkModeCloud"))
+          .setValue(this.plugin.settings.linkMode)
+          .onChange((value) => {
+            this.plugin.settings.linkMode = value as "local" | "cloud";
+            void save();
+          })
+      );
+
 
     new Setting(containerEl)
       .setName(t("deleteRemoteOnNoteDelete"))
@@ -583,17 +580,6 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
 
     new Setting(containerEl).setName(t("recentLog")).setHeading();
-
-    if ((settings.pendingDeletes || []).length) {
-      new Setting(containerEl).setName(t("pendingDeletes")).setHeading();
-      containerEl.createEl("pre", {
-        text: settings.pendingDeletes
-          .slice(0, 20)
-          .map((entry) => `${new Date(entry.dueAt).toLocaleString()} ${entry.sourcePath}`)
-          .join("\n"),
-        cls: "attachment-imagebed-manager-log",
-      });
-    }
 
     const logs = (settings.logs || []).slice(0, 20);
     if (logs.length > 0) {

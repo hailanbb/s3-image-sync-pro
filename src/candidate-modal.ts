@@ -170,7 +170,7 @@ export class CandidateModal extends Modal {
         this.updateProgress(state);
       });
       new Notice(t("replacedNotice", { count: result.replaced }));
-      this.renderDeleteConfirmation(result.localFiles || []);
+      this.close();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Attachment replacement failed", error);
@@ -221,54 +221,6 @@ export class CandidateModal extends Modal {
     };
     const phaseText = phaseMap[state.phase] || state.phase;
     this.progressText.setText(`${phaseText}: ${state.label || ""} (${state.current || 0}/${total})`);
-  }
-
-  renderDeleteConfirmation(localFiles: LocalFileRecord[]): void {
-    const t = (k: string, p?: Record<string, unknown>) => this.plugin.t(k, p);
-    const { contentEl } = this;
-    contentEl.empty();
-
-    const container = contentEl.createDiv({ cls: "attachment-imagebed-manager-modal-content" });
-    const view = container.createDiv({ cls: "attachment-imagebed-manager-delete-view" });
-    
-    view.createEl("h2", { text: t("linksReplacedTitle") });
-    view.createEl("p", {
-      text: t("linksReplacedDesc"),
-      cls: "attachment-imagebed-manager-summary",
-    });
-
-    if (localFiles.length) {
-      const list = view.createDiv({ cls: "attachment-imagebed-manager-delete-list" });
-      for (const fileRecord of localFiles) {
-        const item = list.createDiv({ cls: "attachment-imagebed-manager-delete-item" });
-        item.createDiv({ text: fileRecord.name });
-        item.createDiv({ text: fileRecord.path, cls: "attachment-imagebed-manager-delete-item-path" });
-      }
-    }
-
-    const actions = view.createDiv({ cls: "attachment-imagebed-manager-delete-actions" });
-    
-    const keepBtn = actions.createEl("button", { text: t("keepLocal") });
-    keepBtn.addEventListener("click", () => this.close());
-
-    const deleteBtn = actions.createEl("button", {
-      text: t("deleteLocal"),
-      cls: "mod-warning"
-    });
-    deleteBtn.addEventListener("click", () => {
-      void (async () => {
-        try {
-          await this.plugin.deleteLocalFileRecords(this.noteFile, localFiles, "manual-delete");
-          new Notice(t("movedToTrash", { count: localFiles.length }));
-          this.close();
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : String(error);
-          console.error("Attachment local delete failed", error);
-          new Notice(t("localDeleteFailed", { error: message }), 10000);
-          this.renderError(error instanceof Error ? error : new Error(message));
-        }
-      })();
-    });
   }
 
   renderError(error: Error): void {

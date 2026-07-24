@@ -1,4 +1,4 @@
-import { PluginSettings, S3Config, ReplacementType, PendingDelete, LogEntry } from "./types";
+import { PluginSettings, S3Config, ReplacementType, LogEntry } from "./types";
 import { FILE_CATEGORIES } from "./file-categories";
 
 const DEFAULT_S3: S3Config = {
@@ -31,15 +31,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   quietSeconds: 600,
   autoScanMinSizeMiB: 0,
   attachmentRoot: "90-笔记系统/92-附件",
-  deletePolicy: "confirm",
-  autoDeleteDelayHours: 24,
   s3: DEFAULT_S3,
   enabledExtensions: DEFAULT_ENABLED_EXTS,
   minSizeRules: DEFAULT_MIN_SIZE,
   autoCandidateExts: DEFAULT_AUTO_CANDIDATE_EXTS,
   customExtensions: [],
   customReplacements: {},
-  pendingDeletes: [],
   webpEnabled: false,
   webpQuality: 80,
   webpSkipFormats: ["svg", "gif"],
@@ -48,6 +45,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoTransferRemoteImages: false,
   remoteImageMaxSizeMiB: 10,
   syncS3OnNoteMove: true,
+  localMirrorRoot: "98 cloudflareR2",
+  linkMode: "local",
   logs: [],
 };
 
@@ -69,7 +68,6 @@ interface OldLoadedSettings {
   autoCandidateExts?: string[];
   customExtensions?: string[];
   customReplacements?: Record<string, ReplacementType>;
-  pendingDeletes?: PendingDelete[];
   logs?: LogEntry[];
 }
 
@@ -83,7 +81,6 @@ interface LoadedSettings {
   autoCandidateExts?: string[];
   customExtensions?: string[];
   customReplacements?: Record<string, ReplacementType>;
-  pendingDeletes?: PendingDelete[];
   logs?: LogEntry[];
 }
 
@@ -154,7 +151,6 @@ export function mergeSettings(defaults: PluginSettings, loaded: unknown): Plugin
     autoCandidateExts: migrated.autoCandidateExts || data.autoCandidateExts || defaults.autoCandidateExts,
     customExtensions: data.customExtensions || defaults.customExtensions,
     customReplacements: migrated.customReplacements || data.customReplacements || defaults.customReplacements,
-    pendingDeletes: Array.isArray(data.pendingDeletes) ? data.pendingDeletes : [],
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : [],
   };
 }
