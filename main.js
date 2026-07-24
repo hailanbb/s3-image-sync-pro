@@ -5333,7 +5333,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         try {
           await this.app.vault.createFolder(current);
         } catch (e) {
-          if (!e.message?.includes("Folder already exists")) {
+          if (!(e instanceof Error) || !e.message?.includes("Folder already exists")) {
             console.warn(`Failed to create folder ${current}:`, e);
           }
         }
@@ -5552,7 +5552,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
             const stem = relativePath.replace(/\.[^/.]+$/, "");
             const cloudExt = this.guessCloudExt(relativePath);
             keys.push(`${stem}.${cloudExt}`);
-          } catch (e) {
+          } catch {
           }
         }
       }
@@ -5588,7 +5588,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
               const localFile = this.app.vault.getAbstractFileByPath(localPath);
               if (localFile) {
                 try {
-                  await this.app.vault.trash(localFile, true);
+                  await this.app.fileManager.trashFile(localFile);
                 } catch {
                 }
                 break;
@@ -5626,7 +5626,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       const localFolder = `${mirrorRoot}/${folderPath}`;
       const existing = this.app.vault.getAbstractFileByPath(localFolder);
       if (existing instanceof import_obsidian6.TFolder) {
-        await this.app.vault.trash(existing, true).catch(() => {
+        await this.app.fileManager.trashFile(existing).catch(() => {
         });
       }
     }
@@ -5983,8 +5983,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   findLocalMirrorForCloudKey(cloudKey, mirrorRoot) {
     const stem = cloudKey.replace(/\.[^/.]+$/, "");
-    const localDir = `${mirrorRoot}/${stem.substring(0, stem.lastIndexOf("/") >= 0 ? stem.lastIndexOf("/") : stem.length)}`;
-    const baseName = stem.split("/").pop() || "";
     const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
     const exactExt = cloudKey.split(".").pop();
     if (exactExt && !candidates.includes(exactExt.toLowerCase())) {
@@ -6022,7 +6020,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       new import_obsidian6.Notice(this.t("migrationNoDomain"));
       return;
     }
-    const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
     const files = this.app.vault.getMarkdownFiles();
     let downloaded = 0;
     let skipped = 0;
@@ -6085,12 +6082,12 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       return;
     for (const child of folder.children) {
       try {
-        await this.app.vault.trash(child, true);
+        await this.app.fileManager.trashFile(child);
       } catch {
       }
     }
     try {
-      await this.app.vault.trash(folder, true);
+      await this.app.fileManager.trashFile(folder);
     } catch {
     }
   }
