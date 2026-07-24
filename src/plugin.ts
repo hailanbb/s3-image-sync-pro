@@ -503,7 +503,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     }
   }
 
-  async uploadBuffer(binary: ArrayBuffer, originalName: string, noteFile?: TFile): Promise<UploadResult> {
+  async uploadBuffer(binary: ArrayBuffer, originalName: string, noteFile?: TFile, originalFilePath?: string): Promise<UploadResult> {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
     
@@ -568,9 +568,11 @@ export default class S3ImageSyncPlugin extends Plugin {
       localPath = `${mirrorRoot}/${keyStem}.${originalExt}`;
       const existing = this.app.vault.getAbstractFileByPath(localPath);
       if (existing instanceof TFile) {
-        // Fast path: file already exists locally, assume it's also in S3
-        const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
-        return { key, publicUrl, localPath };
+        if (existing.path !== originalFilePath) {
+          // Fast path: file already exists locally (and it is not the very file we are uploading), assume it's also in S3
+          const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
+          return { key, publicUrl, localPath };
+        }
       }
     }
 
@@ -610,7 +612,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   async uploadCandidate(candidate: Candidate, noteFile?: TFile): Promise<UploadResult> {
     const binary = await this.app.vault.readBinary(candidate.file);
-    return this.uploadBuffer(binary, candidate.file.name, noteFile);
+    return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
 
   buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string): string {
@@ -636,10 +638,15 @@ export default class S3ImageSyncPlugin extends Plugin {
     const byPath = new Map<string, LocalFileRecord>();
     for (const candidate of candidates) {
       if (byPath.has(candidate.file.path)) continue;
+      const upload = uploaded.get(candidate.file.path);
+      // Skip trashing if the original file is already exactly at the mirror path.
+      if (upload?.localPath && candidate.file.path === upload.localPath) {
+        continue;
+      }
       byPath.set(candidate.file.path, {
         path: candidate.file.path,
         name: candidate.file.name,
-        remoteUrl: uploaded.get(candidate.file.path)?.publicUrl || "",
+        remoteUrl: upload?.publicUrl || "",
       });
     }
     return Array.from(byPath.values());
