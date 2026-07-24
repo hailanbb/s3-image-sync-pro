@@ -16,7 +16,6 @@ import { extractLocalRefs, extractRemoteImageRefs, guessExtFromUrl } from "./lin
 import { putS3Object, deleteS3Object, copyS3Object } from "./s3-client";
 import { sha256Hex } from "./crypto";
 import {
-  basename,
   buildPublicUrl,
   contentTypeForExt,
   escapeMarkdownLabel,
@@ -135,10 +134,10 @@ export default class S3ImageSyncPlugin extends Plugin {
     );
     // Paste and Drop event listeners
     this.registerEvent(
-      this.app.workspace.on("editor-paste", this.onEditorPaste.bind(this))
+      this.app.workspace.on("editor-paste", this.onEditorPaste.bind(this) as (evt: ClipboardEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo) => void)
     );
     this.registerEvent(
-      this.app.workspace.on("editor-drop", this.onEditorDrop.bind(this))
+      this.app.workspace.on("editor-drop", this.onEditorDrop.bind(this) as (evt: DragEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo) => void)
     );
     // Initialize cache for existing notes
     if (this.settings.deleteRemoteOnNoteDelete) {
@@ -494,8 +493,8 @@ export default class S3ImageSyncPlugin extends Plugin {
       if (!abstractFile) {
         try {
           await this.app.vault.createFolder(current);
-        } catch (e: any) {
-          if (!e.message?.includes("Folder already exists")) {
+        } catch (e: unknown) {
+          if (!(e instanceof Error) || !e.message?.includes("Folder already exists")) {
             console.warn(`Failed to create folder ${current}:`, e);
           }
         }
@@ -749,7 +748,7 @@ export default class S3ImageSyncPlugin extends Plugin {
             const stem = relativePath.replace(/\.[^/.]+$/, "");
             const cloudExt = this.guessCloudExt(relativePath);
             keys.push(`${stem}.${cloudExt}`);
-          } catch (e) {
+          } catch {
             // Ignore decode errors
           }
         }
@@ -790,7 +789,7 @@ export default class S3ImageSyncPlugin extends Plugin {
               const localPath = `${mirrorRoot}/${stem}.${ext}`;
               const localFile = this.app.vault.getAbstractFileByPath(localPath);
               if (localFile) {
-                try { await this.app.vault.trash(localFile, true); } catch { /* ignore */ }
+                try { await this.app.fileManager.trashFile(localFile); } catch { /* ignore */ }
                 break;
               }
             }
@@ -830,7 +829,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       const localFolder = `${mirrorRoot}/${folderPath}`;
       const existing = this.app.vault.getAbstractFileByPath(localFolder);
       if (existing instanceof TFolder) {
-        await this.app.vault.trash(existing, true).catch(() => {});
+        await this.app.fileManager.trashFile(existing).catch(() => {});
       }
     }
   }
@@ -1244,8 +1243,6 @@ export default class S3ImageSyncPlugin extends Plugin {
   private findLocalMirrorForCloudKey(cloudKey: string, mirrorRoot: string): string | null {
     // Cloud key might have .webp extension, but local file has original extension
     const stem = cloudKey.replace(/\.[^/.]+$/, "");
-    const localDir = `${mirrorRoot}/${stem.substring(0, stem.lastIndexOf("/") >= 0 ? stem.lastIndexOf("/") : stem.length)}`;
-    const baseName = stem.split("/").pop() || "";
     const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
 
     // Just in case the file was saved with a non-standard extension (like the previous .640 bug)
@@ -1292,7 +1289,6 @@ export default class S3ImageSyncPlugin extends Plugin {
       new Notice(this.t("migrationNoDomain"));
       return;
     }
-    const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
 
     const files = this.app.vault.getMarkdownFiles();
     let downloaded = 0;
@@ -1372,14 +1368,14 @@ export default class S3ImageSyncPlugin extends Plugin {
     // which throws ENOENT if any file was already deleted externally.
     for (const child of folder.children) {
       try {
-        await this.app.vault.trash(child, true);
+        await this.app.fileManager.trashFile(child);
       } catch {
         // File may already be missing — ignore
       }
     }
     // Trash the now-empty folder
     try {
-      await this.app.vault.trash(folder, true);
+      await this.app.fileManager.trashFile(folder);
     } catch {
       // Folder may already be gone
     }

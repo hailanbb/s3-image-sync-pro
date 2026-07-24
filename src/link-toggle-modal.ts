@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, TFile } from "obsidian";
+import { App, Modal, Setting } from "obsidian";
 import type S3ImageSyncPlugin from "./plugin";
 
 export class LinkToggleModal extends Modal {

@@ -1,6 +1,6 @@
 import { App, Modal, Notice, TFile, setIcon } from "obsidian";
 import type S3ImageSyncPlugin from "./plugin";
-import { Candidate, ProgressState, LocalFileRecord } from "./types";
+import { Candidate, ProgressState } from "./types";
 import { formatBytes, isPreviewableImage } from "./utils";
 
 export class CandidateModal extends Modal {
