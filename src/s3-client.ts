@@ -189,50 +189,72 @@ export async function deleteS3Object(config: S3Config, key: string): Promise<voi
   const url = `${endpoint}/${bucket}/${encodedKey}`;
   const parsed = new URL(url);
   const region = getEffectiveRegion(config);
-
-  const now = new Date();
-  const amzDate = toAmzDate(now);
-  const dateStamp = amzDate.slice(0, 8);
   const emptyHash = await sha256Hex(new Uint8Array(0));
 
-  const canonicalHeaders =
-    [
-      `host:${parsed.host}`,
-      `x-amz-content-sha256:${emptyHash}`,
-      `x-amz-date:${amzDate}`,
-    ].join("\n") + "\n";
-  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const now = new Date();
+    const amzDate = toAmzDate(now);
+    const dateStamp = amzDate.slice(0, 8);
 
-  const canonicalRequest = [
-    "DELETE",
-    parsed.pathname,
-    "",
-    canonicalHeaders,
-    signedHeaders,
-    emptyHash,
-  ].join("\n");
+    const canonicalHeaders =
+      [
+        `host:${parsed.host}`,
+        `x-amz-content-sha256:${emptyHash}`,
+        `x-amz-date:${amzDate}`,
+      ].join("\n") + "\n";
+    const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
 
-  const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
-  const canonicalRequestHash = await sha256Hex(new TextEncoder().encode(canonicalRequest));
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    amzDate,
-    credentialScope,
-    canonicalRequestHash,
-  ].join("\n");
+    const canonicalRequest = [
+      "DELETE",
+      parsed.pathname,
+      "",
+      canonicalHeaders,
+      signedHeaders,
+      emptyHash,
+    ].join("\n");
 
-  const signingKey = await getSignatureKey(config.secretAccessKey, dateStamp, region, "s3");
-  const signature = await hmacHex(signingKey, stringToSign);
+    const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+    const canonicalRequestHash = await sha256Hex(new TextEncoder().encode(canonicalRequest));
+    const stringToSign = [
+      "AWS4-HMAC-SHA256",
+      amzDate,
+      credentialScope,
+      canonicalRequestHash,
+    ].join("\n");
 
-  const headers: Record<string, string> = {
-    "x-amz-content-sha256": emptyHash,
-    "x-amz-date": amzDate,
-    Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-  };
+    const signingKey = await getSignatureKey(config.secretAccessKey, dateStamp, region, "s3");
+    const signature = await hmacHex(signingKey, stringToSign);
 
-  const response = await requestUrl({ url, method: "DELETE", headers, throw: false });
-  if (response.status >= 400 && response.status !== 404) {
-    console.warn(`S3 delete failed for key "${key}" (${response.status}): ${response.text || ""}`);
+    const headers: Record<string, string> = {
+      "x-amz-content-sha256": emptyHash,
+      "x-amz-date": amzDate,
+      Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    };
+
+    try {
+      const response = await requestUrl({ url, method: "DELETE", headers, throw: false });
+      
+      // 成功 (2xx) 或文件已不存在 (404) 均视为删除成功
+      if ((response.status >= 200 && response.status < 300) || response.status === 404) return;
+
+      if (shouldRetry(response.status) && attempt < MAX_RETRIES) {
+        await sleep(BASE_DELAY_MS * Math.pow(2, attempt));
+        continue;
+      }
+
+      throw new Error(`S3 delete failed (${response.status}): ${response.text || ""}`);
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes("S3 delete failed")) {
+        // 已格式化的非重试错误（如 403）
+        if (attempt >= MAX_RETRIES) throw error;
+      }
+      // 网络波动、断网或超时异常，执行退避重试
+      if (attempt < MAX_RETRIES) {
+        await sleep(BASE_DELAY_MS * Math.pow(2, attempt));
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
