@@ -34,7 +34,6 @@ jobs:
             main.js
             manifest.json
             styles.css
-            *.wasm
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -44,4 +43,3 @@ jobs:
             main.js
             manifest.json
             styles.css
-            *.wasm

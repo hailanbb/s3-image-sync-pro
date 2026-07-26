@@ -27,7 +27,7 @@ import {
 import { detectLocaleFromApp, t as translate } from "./i18n";
 import { CandidateModal } from "./candidate-modal";
 import { DryRunModal } from "./dry-run-modal";
-import { compressToWebp, setWasmLoader } from "./image-compressor";
+import { compressToWebp } from "./image-compressor";
 import { S3ImageSyncSettingTab } from "./settings-tab";
 import { LinkToggleModal } from "./link-toggle-modal";
 
@@ -42,11 +42,6 @@ export default class S3ImageSyncPlugin extends Plugin {
     await this.loadSettings();
     this.locale = detectLocaleFromApp(getLanguage);
     this.isMobile = Platform.isMobile;
-
-    // Initialize WASM file path for image compression
-    setWasmLoader(async (filename: string) => {
-      return await this.app.vault.adapter.readBinary(`${this.manifest.dir}/${filename}`);
-    });
 
     this.addRibbonIcon("upload-cloud", this.t("ribbonScan"), (evt: MouseEvent) => {
       const menu = new Menu();

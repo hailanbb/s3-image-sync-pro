@@ -1,6 +1,6 @@
 {
   "name": "s3-image-sync-pro",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "Upload images to S3/R2 with note-path matching, WebP WASM compression, and auto-delete sync.",
   "main": "main.js",
   "scripts": {

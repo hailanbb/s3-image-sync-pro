@@ -20,27 +20,6 @@ const nodeBuiltins = [
   "zlib",
 ];
 
-// Plugin to copy WASM files to the output directory
-const copyWasmPlugin = {
-  name: "copy-wasm",
-  setup(build) {
-    build.onEnd(() => {
-      const outDir = dirname(build.initialOptions.outfile || ".");
-      const wasmFiles = [
-        "node_modules/@jsquash/webp/codec/enc/webp_enc.wasm",
-        "node_modules/@jsquash/webp/codec/enc/webp_enc_simd.wasm",
-      ];
-      for (const src of wasmFiles) {
-        const srcPath = resolve(src);
-        if (existsSync(srcPath)) {
-          const destPath = resolve(outDir, src.split("/").pop());
-          copyFileSync(srcPath, destPath);
-        }
-      }
-    });
-  },
-};
-
 const context = await esbuild.context({
   banner: { js: banner },
   entryPoints: ["src/main.ts"],
@@ -70,7 +49,9 @@ const context = await esbuild.context({
   define: {
     "import.meta.url": "'app://obsidian.md/'"
   },
-  plugins: [copyWasmPlugin],
+  loader: {
+    ".wasm": "binary"
+  },
 });
 
 if (prod) {

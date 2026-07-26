@@ -8,6 +8,7 @@
  */
 import { init as initWebpEnc, default as encodeWebp } from "@jsquash/webp/encode";
 import type { EncodeOptions } from "@jsquash/webp/meta";
+import webpEncWasm from "../node_modules/@jsquash/webp/codec/enc/webp_enc.wasm";
 
 export interface CompressResult {
   body: Uint8Array;
@@ -19,20 +20,7 @@ export interface CompressResult {
 
 let wasmInitialized = false;
 
-export function setWasmLoader(loader: (filename: string) => Promise<ArrayBuffer>): void {
-  wasmLoader = loader;
-}
 
-let wasmLoader: ((filename: string) => Promise<ArrayBuffer>) | null = null;
-
-/**
- * Load WASM binary using the injected loader.
- */
-async function loadWasmModule(filename: string): Promise<WebAssembly.Module> {
-  if (!wasmLoader) throw new Error("WASM loader not set");
-  const buffer = await wasmLoader(filename);
-  return WebAssembly.compile(buffer);
-}
 
 /**
  * Initialize WASM modules (lazy, once).
@@ -40,7 +28,7 @@ async function loadWasmModule(filename: string): Promise<WebAssembly.Module> {
 async function ensureWasmInit(): Promise<void> {
   if (wasmInitialized) return;
   try {
-    const wasmModule = await loadWasmModule("webp_enc.wasm");
+    const wasmModule = await WebAssembly.compile(webpEncWasm.buffer);
     await initWebpEnc(wasmModule);
     wasmInitialized = true;
   } catch (e) {
