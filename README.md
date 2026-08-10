@@ -1,6 +1,6 @@
 # S3 Image Sync Pro
 
-[![Version](https://img.shields.io/badge/version-1.5.5-blue)](https://github.com/hailanbb/s3-image-sync-pro/releases)
+[![Version](https://img.shields.io/badge/version-1.6.5-blue)](https://github.com/hailanbb/s3-image-sync-pro/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 [English](#english) | [中文](#中文)
@@ -9,7 +9,7 @@
 
 S3 Image Sync Pro is an Obsidian plugin for S3-compatible image storage (Cloudflare R2, AWS S3, MinIO, and compatible services).
 
-## What v1.5.5 guarantees
+## What v1.6.5 guarantees
 
 The plugin maintains one path invariant:
 
@@ -81,7 +81,7 @@ MIT. This project is based on and extends [s3-image-sync](https://github.com/jon
 
 S3 Image Sync Pro 是用于 Cloudflare R2、AWS S3、MinIO 等 S3 兼容对象存储的 Obsidian 图片同步插件。
 
-## v1.5.5 的路径规则
+## v1.6.5 的路径规则
 
 插件始终遵守同一条规则：
 
