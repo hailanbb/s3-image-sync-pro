@@ -82,6 +82,15 @@ export default class S3ImageSyncPlugin extends Plugin {
           })
       );
 
+      menu.addItem((item) =>
+        item
+          .setTitle(this.t("commandResyncPaths"))
+          .setIcon("refresh-cw")
+          .onClick(() => {
+            void this.resyncAllS3Paths();
+          })
+      );
+
       menu.showAtMouseEvent(evt);
     });
 
@@ -107,6 +116,12 @@ export default class S3ImageSyncPlugin extends Plugin {
       id: "download-cloud-to-local",
       name: this.t("commandDownloadToLocal"),
       callback: () => this.downloadCloudToLocal(),
+    });
+
+    this.addCommand({
+      id: "resync-all-s3-paths",
+      name: this.t("commandResyncPaths"),
+      callback: () => this.resyncAllS3Paths(),
     });
 
     this.addSettingTab(new S3ImageSyncSettingTab(this.app, this));
@@ -148,6 +163,12 @@ export default class S3ImageSyncPlugin extends Plugin {
         }
       })
     );
+
+    // Startup integrity check: detect S3 path mismatches
+    if (this.settings.syncS3OnNoteMove) {
+      // Use setTimeout to avoid blocking plugin load
+      window.setTimeout(() => void this.startupPathIntegrityCheck(), 10000);
+    }
   }
 
   onunload(): void {
@@ -167,6 +188,29 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   t(key: string, params: Record<string, unknown> = {}): string {
     return translate(this.locale, key, params);
+  }
+
+  isIgnoredNotePath(path: string): boolean {
+    const normalizedPath = trimSlashes(String(path || "").replace(/\\/g, "/"));
+    return this.settings.excludedNotePaths.some((excludedPath) => {
+      const root = trimSlashes(excludedPath.replace(/\\/g, "/"));
+      return root !== "" && (normalizedPath === root || normalizedPath.startsWith(`${root}/`));
+    });
+  }
+
+  isIgnoredNote(file: TFile | null | undefined): boolean {
+    return !!file && this.isIgnoredNotePath(file.path);
+  }
+
+  private getLocalMirrorPathForCloudKey(cloudKey: string): string | null {
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    const key = trimSlashes(cloudKey);
+    return mirrorRoot && key ? `${mirrorRoot}/${key}` : null;
+  }
+
+  private isLocalMirrorPath(path: string): boolean {
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    return mirrorRoot !== "" && (path === mirrorRoot || path.startsWith(`${mirrorRoot}/`));
   }
 
   configureAutoScan(): void {
@@ -306,6 +350,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async findCandidatesInNote(noteFile: TFile, options: ScanOptions): Promise<Candidate[]> {
+    if (this.isIgnoredNote(noteFile)) return [];
     const text = await this.app.vault.read(noteFile);
     const refs = extractLocalRefs(text);
     const byKey = new Map<string, Candidate>();
@@ -313,6 +358,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
       if (!targetFile || !(targetFile instanceof TFile)) continue;
+      if (this.isLocalMirrorPath(targetFile.path)) continue;
       if (options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
         continue;
       if (this.isCoverReference(text, ref)) continue;
@@ -497,8 +543,33 @@ export default class S3ImageSyncPlugin extends Plugin {
     }
   }
 
+  private async copyLocalMirrorForKey(oldKey: string, newKey: string): Promise<void> {
+    const newPath = this.getLocalMirrorPathForCloudKey(newKey);
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (!newPath || !mirrorRoot) return;
+
+    const oldExactPath = this.getLocalMirrorPathForCloudKey(oldKey);
+    const oldPath = oldExactPath && this.app.vault.getAbstractFileByPath(oldExactPath) instanceof TFile
+      ? oldExactPath
+      : this.findLocalMirrorForCloudKey(oldKey, mirrorRoot);
+    if (!oldPath) return;
+
+    const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
+    if (!(oldFile instanceof TFile)) return;
+    const binary = await this.app.vault.readBinary(oldFile);
+    const parentDir = newPath.substring(0, newPath.lastIndexOf("/"));
+    if (parentDir) await this.ensureFolderExists(parentDir);
+    const existing = this.app.vault.getAbstractFileByPath(newPath);
+    if (existing instanceof TFile) {
+      await this.app.vault.modifyBinary(existing, binary);
+    } else {
+      await this.app.vault.createBinary(newPath, binary);
+    }
+  }
+
   async uploadBuffer(binary: ArrayBuffer, originalName: string, noteFile?: TFile, originalFilePath?: string): Promise<UploadResult> {
     let body = new Uint8Array(binary);
+
     const hash = await sha256Hex(body);
     
     // Attempt to extract extension from filename
@@ -554,22 +625,6 @@ export default class S3ImageSyncPlugin extends Plugin {
       notedir: noteDir,
       notename: noteName,
     });
-    // ── Check if already exists in local mirror (skip upload) ──
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    let localPath: string | undefined;
-    if (mirrorRoot) {
-      const keyStem = key.replace(/\.[^/.]+$/, "");
-      localPath = `${mirrorRoot}/${keyStem}.${originalExt}`;
-      const existing = this.app.vault.getAbstractFileByPath(localPath);
-      if (existing instanceof TFile) {
-        if (existing.path !== originalFilePath) {
-          // Fast path: file already exists locally (and it is not the very file we are uploading), assume it's also in S3
-          const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
-          return { key, publicUrl, localPath };
-        }
-      }
-    }
-
     await putS3Object(
       this.settings.s3,
       key,
@@ -580,24 +635,28 @@ export default class S3ImageSyncPlugin extends Plugin {
     );
 
     const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
+    const localPath = this.getLocalMirrorPathForCloudKey(key);
+    if (!localPath) {
+      await deleteS3Object(this.settings.s3, key).catch(() => {});
+      throw new Error("Local mirror root is required for image uploads.");
+    }
 
-    if (mirrorRoot && localPath) {
+    if (localPath) {
       try {
-        // Ensure parent directories exist
         const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
         if (parentDir) {
           await this.ensureFolderExists(parentDir);
         }
-        // Write original binary (not the WebP compressed one)
         const existing = this.app.vault.getAbstractFileByPath(localPath);
+        const mirrorBinary = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
         if (existing instanceof TFile) {
-          await this.app.vault.modifyBinary(existing, binary);
+          await this.app.vault.modifyBinary(existing, mirrorBinary);
         } else {
-          await this.app.vault.createBinary(localPath, binary);
+          await this.app.vault.createBinary(localPath, mirrorBinary);
         }
       } catch (error) {
-        console.warn(`Failed to write local mirror at ${localPath}:`, error);
-        localPath = undefined; // don't return a broken localPath
+        await deleteS3Object(this.settings.s3, key).catch(() => {});
+        throw error;
       }
     }
 
@@ -740,9 +799,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         if (decodedUrl.startsWith(mirrorRoot)) {
           try {
             const relativePath = decodedUrl.substring(mirrorRoot.length + 1);
-            const stem = relativePath.replace(/\.[^/.]+$/, "");
-            const cloudExt = this.guessCloudExt(relativePath);
-            keys.push(`${stem}.${cloudExt}`);
+            keys.push(relativePath);
           } catch {
             // Ignore decode errors
           }
@@ -759,6 +816,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async cacheRemoteUrls(file: TFile): Promise<void> {
+    if (this.isIgnoredNote(file)) return;
     if (!this.settings.deleteRemoteOnNoteDelete) return;
     try {
       const text = await this.app.vault.read(file);
@@ -810,6 +868,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async handleFolderDelete(folderPath: string): Promise<void> {
+    if (this.isIgnoredNotePath(folderPath)) return;
     const notesToDelete: string[] = [];
     for (const notePath of this.noteRemoteUrls.keys()) {
       if (notePath.startsWith(folderPath + "/")) {
@@ -830,6 +889,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async handleNoteDelete(notePath: string): Promise<void> {
+    if (this.isIgnoredNotePath(notePath)) return;
     // 1. Always cleanup local mirror directory for this note!
     await this.cleanupLocalMirrorForNote(notePath);
 
@@ -936,6 +996,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   // ─── Remote Image Transfer ───────────────────────────────────────────
 
   async findRemoteCandidatesInNote(noteFile: TFile): Promise<RemoteCandidate[]> {
+    if (this.isIgnoredNote(noteFile)) return [];
     const text = await this.app.vault.read(noteFile);
     const refs = extractRemoteImageRefs(text);
     // Filter out URLs already on our own S3 domain
@@ -1154,9 +1215,10 @@ export default class S3ImageSyncPlugin extends Plugin {
   // ─── Link Mode Toggle ──────────────────────────────────────────────
 
   async executeToggleLinks(targetMode: "local" | "cloud", scope: "current" | "vault"): Promise<void> {
-    const files = scope === "vault"
+    const candidateFiles = scope === "vault"
       ? this.app.vault.getMarkdownFiles()
       : [this.app.workspace.getActiveFile()].filter((f): f is TFile => f instanceof TFile && f.extension === "md");
+    const files = candidateFiles.filter((file) => !this.isIgnoredNote(file));
 
     if (files.length === 0) {
       new Notice(this.t("openMarkdownFirst"));
@@ -1217,12 +1279,8 @@ export default class S3ImageSyncPlugin extends Plugin {
           "g"
         );
         next = next.replace(localRegex, (_match, labelPart: string, relativePathEncoded: string) => {
-          // Decode first, because markdown URL might be URL-encoded (especially if it contains spaces)
           const relativePath = decodeURIComponent(relativePathEncoded);
-          // Convert local extension to cloud extension
-          const stem = relativePath.replace(/\.[^/.]+$/, "");
-          const cloudExt = this.guessCloudExt(relativePath);
-          const cloudKey = `${stem}.${cloudExt}`;
+          const cloudKey = relativePath;
           const cloudUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, cloudKey);
           changed++;
           return `${labelPart}(${cloudUrl})`;
@@ -1236,6 +1294,11 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   private findLocalMirrorForCloudKey(cloudKey: string, mirrorRoot: string): string | null {
+    const exactPath = `${mirrorRoot}/${trimSlashes(cloudKey)}`;
+    if (this.app.vault.getAbstractFileByPath(exactPath) instanceof TFile) {
+      return exactPath;
+    }
+
     // Cloud key might have .webp extension, but local file has original extension
     const stem = cloudKey.replace(/\.[^/.]+$/, "");
     const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
@@ -1292,13 +1355,18 @@ export default class S3ImageSyncPlugin extends Plugin {
     const notice = new Notice(this.t("migrationWorking"), 0);
 
     for (const file of files) {
+      if (this.isIgnoredNote(file)) continue;
       // Use extractRemoteUrls — already handles URL decoding and derives cloud keys
       const cloudKeys = this.extractRemoteUrls(await this.app.vault.read(file));
       for (const cloudKey of cloudKeys) {
-        const localStem = cloudKey.replace(/\.[^/.]+$/, "");
+        const localPath = this.getLocalMirrorPathForCloudKey(cloudKey);
+        if (!localPath) {
+          failed++;
+          continue;
+        }
 
         // Check if local mirror already exists (any extension)
-        if (this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot)) {
+        if (this.app.vault.getAbstractFileByPath(localPath) instanceof TFile) {
           skipped++;
           continue;
         }
@@ -1317,9 +1385,6 @@ export default class S3ImageSyncPlugin extends Plugin {
             failed++;
             continue;
           }
-
-          const cloudExt = (cloudKey.split(".").pop() || "webp").toLowerCase();
-          const localPath = `${mirrorRoot}/${localStem}.${cloudExt}`;
 
           const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
           if (parentDir) {
@@ -1380,6 +1445,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   private async syncS3PathsOnRename(file: TFile, oldPath: string): Promise<void> {
     try {
+    if (this.isIgnoredNote(file) || this.isIgnoredNotePath(oldPath)) return;
       this.ensureS3Settings();
     } catch { return; }
 
@@ -1441,7 +1507,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
       try {
         await copyS3Object(this.settings.s3, oldKey, newKey);
-        await deleteS3Object(this.settings.s3, oldKey);
+        await this.copyLocalMirrorForKey(oldKey, newKey);
         const newUrl = buildPublicUrl(
           this.settings.s3.customDomainName,
           this.settings.s3.endpoint,
@@ -1467,32 +1533,197 @@ export default class S3ImageSyncPlugin extends Plugin {
       new Notice(this.t("s3PathSynced", { count: movedCount }));
     }
 
-    // Also move local mirror directory
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (mirrorRoot) {
-      const oldMirrorDir = oldDir
-        ? `${mirrorRoot}/${sanitizeDir(oldDir)}/${sanitizeName(oldName)}`
-        : `${mirrorRoot}/${sanitizeName(oldName)}`;
-      const newMirrorDir = newDir
-        ? `${mirrorRoot}/${sanitizeDir(newDir)}/${sanitizeName(newName)}`
-        : `${mirrorRoot}/${sanitizeName(newName)}`;
+  }
 
-      if (oldMirrorDir !== newMirrorDir) {
-        const oldFolder = this.app.vault.getAbstractFileByPath(oldMirrorDir);
-        if (oldFolder) {
-          try {
-            // Ensure new parent exists
-            const newParent = newMirrorDir.substring(0, newMirrorDir.lastIndexOf("/"));
-            if (newParent && !this.app.vault.getAbstractFileByPath(newParent)) {
-              await this.app.vault.createFolder(newParent);
-            }
-            await this.app.vault.rename(oldFolder, newMirrorDir);
-          } catch (error) {
-            console.warn(`Failed to move mirror directory ${oldMirrorDir} -> ${newMirrorDir}:`, error);
+  // ─── Startup Path Integrity Check ──────────────────────────────────
+
+  private async startupPathIntegrityCheck(): Promise<void> {
+    try {
+      this.ensureS3Settings();
+    } catch { return; }
+
+    const files = this.app.vault.getMarkdownFiles();
+    let mismatchCount = 0;
+
+    for (const file of files) {
+      if (this.isIgnoredNote(file)) continue;
+      try {
+        const text = await this.app.vault.read(file);
+        const cloudKeys = this.extractRemoteUrls(text);
+        if (cloudKeys.length === 0) continue;
+
+        const noteDir = file.parent?.path || "";
+        const noteName = file.basename;
+        const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
+        const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+        const expectedDirPrefix = sanitizeDir(noteDir);
+        const expectedNameSegment = sanitizeName(noteName);
+
+        for (const key of cloudKeys) {
+          // Skip keys that don't follow notedir/notename pattern (e.g. mpclipper date-based)
+          const segments = key.split("/");
+          if (segments.length < 3) continue;
+
+          const keyNotedir = segments.slice(0, -2).join("/");
+
+          if (keyNotedir !== expectedDirPrefix) {
+            mismatchCount++;
+            break; // One mismatch per note is enough
           }
         }
+      } catch {
+        // Skip unreadable files
       }
     }
+
+    if (mismatchCount > 0) {
+      new Notice(this.t("resyncStartupNotice", { count: mismatchCount }), 15000);
+    }
+  }
+
+  // ─── Re-sync All S3 Paths ─────────────────────────────────────────
+
+  async resyncAllS3Paths(): Promise<void> {
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new Notice(e instanceof Error ? e.message : String(e));
+      return;
+    }
+
+    const files = this.app.vault.getMarkdownFiles();
+    const notice = new Notice(this.t("resyncScanning", { current: 0, total: files.length }), 0);
+
+    // Phase 1: Scan for mismatches
+    interface MismatchEntry {
+      file: TFile;
+      oldKey: string;
+      newKey: string;
+      oldUrl: string;
+    }
+    const mismatches: MismatchEntry[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (this.isIgnoredNote(file)) continue;
+      if (i % 30 === 0) {
+        notice.setMessage(this.t("resyncScanning", { current: i, total: files.length }));
+      }
+      try {
+        const text = await this.app.vault.read(file);
+        const cloudKeys = this.extractRemoteUrls(text);
+        if (cloudKeys.length === 0) continue;
+
+        const noteDir = file.parent?.path || "";
+        const noteName = file.basename;
+        const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
+        const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+        const safeNewDir = sanitizeDir(noteDir);
+        const safeNewName = sanitizeName(noteName);
+
+        for (const oldKey of cloudKeys) {
+          const segments = oldKey.split("/");
+          // Must have at least 3 segments: notedir.../notename/filename
+          if (segments.length < 3) continue;
+
+          const keyNotedir = segments.slice(0, -2).join("/");
+          const keyNotename = segments[segments.length - 2];
+          const filename = segments[segments.length - 1];
+
+          // Check if notedir or notename is different
+          if (keyNotedir === safeNewDir && keyNotename === safeNewName) continue;
+
+          // Compute the new key
+          const newKeyParts = [];
+          if (safeNewDir) newKeyParts.push(safeNewDir);
+          newKeyParts.push(safeNewName);
+          newKeyParts.push(filename);
+          const newKey = newKeyParts.join("/");
+
+          if (newKey !== oldKey) {
+            const oldUrl = buildPublicUrl(
+              this.settings.s3.customDomainName,
+              this.settings.s3.endpoint,
+              this.settings.s3.bucketName,
+              oldKey
+            );
+            mismatches.push({ file, oldKey, newKey, oldUrl });
+          }
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+
+    if (mismatches.length === 0) {
+      notice.hide();
+      new Notice(this.t("resyncNoMismatch"));
+      return;
+    }
+
+    notice.setMessage(this.t("resyncFoundMismatch", { count: mismatches.length }));
+
+    // Phase 2: Fix mismatches
+    let fixed = 0;
+    let skipped = 0;
+    let failed = 0;
+    // Group by file to batch URL replacements
+    const byFile = new Map<string, MismatchEntry[]>();
+    for (const entry of mismatches) {
+      const arr = byFile.get(entry.file.path) || [];
+      arr.push(entry);
+      byFile.set(entry.file.path, arr);
+    }
+
+    let processed = 0;
+    for (const [filePath, entries] of byFile) {
+      const file = entries[0].file;
+      const urlReplacements = new Map<string, string>();
+
+      for (const entry of entries) {
+        processed++;
+        if (processed % 5 === 0) {
+          notice.setMessage(this.t("resyncProgress", { current: processed, total: mismatches.length }));
+        }
+
+        try {
+          await copyS3Object(this.settings.s3, entry.oldKey, entry.newKey);
+          await this.copyLocalMirrorForKey(entry.oldKey, entry.newKey);
+          const newUrl = buildPublicUrl(
+            this.settings.s3.customDomainName,
+            this.settings.s3.endpoint,
+            this.settings.s3.bucketName,
+            entry.newKey
+          );
+          urlReplacements.set(entry.oldUrl, newUrl);
+          fixed++;
+        } catch (error) {
+          console.error(`Resync: Failed to move S3 object ${entry.oldKey} -> ${entry.newKey}:`, error);
+          failed++;
+        }
+      }
+
+      // Update URLs in note
+      if (urlReplacements.size > 0) {
+        try {
+          await this.app.vault.process(file, (content) => {
+            let next = content;
+            for (const [oldUrl, newUrl] of urlReplacements) {
+              next = replaceAllLiteral(next, oldUrl, newUrl);
+            }
+            return next;
+          });
+        } catch (error) {
+          console.error(`Resync: Failed to update URLs in ${filePath}:`, error);
+        }
+      }
+
+    }
+
+    notice.hide();
+    const msg = this.t("resyncDone", { fixed, skipped, failed });
+    new Notice(msg, 10000);
+    console.log(`S3 Image Sync: Resync complete — fixed: ${fixed}, skipped: ${skipped}, failed: ${failed}`);
   }
 }
 

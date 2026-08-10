@@ -182,8 +182,17 @@ export const I18N: Record<string, Record<string, string>> = {
     // S3 path sync on note move
     syncS3OnNoteMove: "Sync S3 paths when note moves",
     syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
+    excludedNotePaths: "Ignored note paths",
+    excludedNotePathsDesc: "One vault-relative folder path per line. Notes in these folders are never scanned, uploaded, rewritten, downloaded, or path-synced. Default: 06 已归档",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
     s3PathSyncFailed: "S3 path sync failed: {error}",
+    commandResyncPaths: "Re-sync all S3 image paths",
+    resyncScanning: "Scanning for path mismatches... ({current}/{total})",
+    resyncNoMismatch: "All S3 image paths are in sync!",
+    resyncFoundMismatch: "Found {count} image(s) with mismatched paths. Fixing...",
+    resyncProgress: "Re-syncing S3 paths... ({current}/{total})",
+    resyncDone: "Re-sync complete — Fixed: {fixed}  |  Skipped: {skipped}  |  Failed: {failed}",
+    resyncStartupNotice: "S3 Image Sync: Found {count} note(s) with mismatched image paths. Run \"Re-sync all S3 image paths\" to fix.",
 
     // Link toggle & migration
     commandToggleLinks: "Toggle image links (local ↔ cloud)",
@@ -392,8 +401,17 @@ export const I18N: Record<string, Record<string, string>> = {
     // S3 路径同步
     syncS3OnNoteMove: "移动笔记时同步 S3 图片路径",
     syncS3OnNoteMoveDesc: "当笔记被移动或重命名时，自动将其 S3 上的图片迁移到对应的新路径，并更新笔记中的所有链接。",
+    excludedNotePaths: "不处理的笔记路径",
+    excludedNotePathsDesc: "每行填写一个 Vault 内文件夹路径。该路径下的笔记不会被扫描、上传、改写链接、下载镜像或同步路径。默认：06 已归档",
     s3PathSynced: "已将 {count} 张 S3 图片迁移至新路径。",
     s3PathSyncFailed: "S3 路径同步失败：{error}",
+    commandResyncPaths: "重新同步全部 S3 图片路径",
+    resyncScanning: "正在扫描路径不一致...（{current}/{total}）",
+    resyncNoMismatch: "所有 S3 图片路径均已同步！",
+    resyncFoundMismatch: "发现 {count} 张图片路径不一致，正在修复...",
+    resyncProgress: "正在重新同步 S3 路径...（{current}/{total}）",
+    resyncDone: "重新同步完成 — 已修复: {fixed}  |  跳过: {skipped}  |  失败: {failed}",
+    resyncStartupNotice: "S3 图片同步：发现 {count} 篇笔记的图片路径不一致。请运行「重新同步全部 S3 图片路径」来修复。",
 
     // 链接切换与迁移
     commandToggleLinks: "切换图片链接（本地 ↔ 云端）",

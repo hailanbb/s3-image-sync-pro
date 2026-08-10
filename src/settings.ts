@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   remoteImageMaxSizeMiB: 10,
   syncS3OnNoteMove: true,
   localMirrorRoot: "98 cloudflareR2",
+  excludedNotePaths: ["06 已归档"],
   linkMode: "local",
   logs: [],
 };
@@ -81,6 +82,7 @@ interface LoadedSettings {
   autoCandidateExts?: string[];
   customExtensions?: string[];
   customReplacements?: Record<string, ReplacementType>;
+  excludedNotePaths?: string[];
   logs?: LogEntry[];
 }
 
@@ -151,6 +153,9 @@ export function mergeSettings(defaults: PluginSettings, loaded: unknown): Plugin
     autoCandidateExts: migrated.autoCandidateExts || data.autoCandidateExts || defaults.autoCandidateExts,
     customExtensions: data.customExtensions || defaults.customExtensions,
     customReplacements: migrated.customReplacements || data.customReplacements || defaults.customReplacements,
+    excludedNotePaths: Array.isArray(data.excludedNotePaths)
+      ? data.excludedNotePaths.filter((path): path is string => typeof path === "string")
+      : defaults.excludedNotePaths,
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : [],
   };
 }

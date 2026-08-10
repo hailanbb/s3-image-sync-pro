@@ -36,6 +36,7 @@ export interface PluginSettings {
   remoteImageMaxSizeMiB: number;
   syncS3OnNoteMove: boolean;
   localMirrorRoot: string;
+  excludedNotePaths: string[];
   linkMode: "local" | "cloud";
   logs: LogEntry[];
 }

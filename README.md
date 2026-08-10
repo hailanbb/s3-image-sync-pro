@@ -1,7 +1,7 @@
 # S3 Image Sync Pro
 
-[![Version](https://img.shields.io/badge/version-1.5.2-blue.svg)](#)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://obimg.ubaby.top/obsdian/%E6%8F%92%E4%BB%B6/s3-image-sync-pro/README/version-1.5.2-blue-480a6e72e76dc4e6d88ca4da7e553adb.svg)](#)
+[![License: MIT](https://obimg.ubaby.top/obsdian/%E6%8F%92%E4%BB%B6/s3-image-sync-pro/README/License-MIT-yellow-db531ea522213924b8a97c16fa0921d9.svg)](https://opensource.org/licenses/MIT)
 
 [中文说明](#中文说明)
 
