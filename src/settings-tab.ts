@@ -253,6 +253,22 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("excludedNotePaths"))
+      .setDesc(t("excludedNotePathsDesc"))
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("06 已归档")
+          .setValue(this.plugin.settings.excludedNotePaths.join("\n"))
+          .onChange((value) => {
+            this.plugin.settings.excludedNotePaths = value
+              .split(/\r?\n/)
+              .map((path) => path.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""))
+              .filter(Boolean);
+            void save();
+          })
+      );
+
+    new Setting(containerEl)
       .setName(t("localMirrorRoot"))
       .setDesc(t("localMirrorRootDesc"))
       .addText((text) =>

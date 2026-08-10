@@ -3119,6 +3119,7 @@ var DEFAULT_SETTINGS = {
   remoteImageMaxSizeMiB: 10,
   syncS3OnNoteMove: true,
   localMirrorRoot: "98 cloudflareR2",
+  excludedNotePaths: ["06 \u5DF2\u5F52\u6863"],
   linkMode: "local",
   logs: []
 };
@@ -3178,6 +3179,7 @@ function mergeSettings(defaults, loaded) {
     autoCandidateExts: migrated.autoCandidateExts || data.autoCandidateExts || defaults.autoCandidateExts,
     customExtensions: data.customExtensions || defaults.customExtensions,
     customReplacements: migrated.customReplacements || data.customReplacements || defaults.customReplacements,
+    excludedNotePaths: Array.isArray(data.excludedNotePaths) ? data.excludedNotePaths.filter((path) => typeof path === "string") : defaults.excludedNotePaths,
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : []
   };
 }
@@ -3853,8 +3855,17 @@ var I18N = {
     // S3 path sync on note move
     syncS3OnNoteMove: "Sync S3 paths when note moves",
     syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
+    excludedNotePaths: "Ignored note paths",
+    excludedNotePathsDesc: "One vault-relative folder path per line. Notes in these folders are never scanned, uploaded, rewritten, downloaded, or path-synced. Default: 06 \u5DF2\u5F52\u6863",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
     s3PathSyncFailed: "S3 path sync failed: {error}",
+    commandResyncPaths: "Re-sync all S3 image paths",
+    resyncScanning: "Scanning for path mismatches... ({current}/{total})",
+    resyncNoMismatch: "All S3 image paths are in sync!",
+    resyncFoundMismatch: "Found {count} image(s) with mismatched paths. Fixing...",
+    resyncProgress: "Re-syncing S3 paths... ({current}/{total})",
+    resyncDone: "Re-sync complete \u2014 Fixed: {fixed}  |  Skipped: {skipped}  |  Failed: {failed}",
+    resyncStartupNotice: 'S3 Image Sync: Found {count} note(s) with mismatched image paths. Run "Re-sync all S3 image paths" to fix.',
     // Link toggle & migration
     commandToggleLinks: "Toggle image links (local \u2194 cloud)",
     commandDownloadToLocal: "Download all cloud images to local mirror",
@@ -4038,8 +4049,17 @@ var I18N = {
     // S3 路径同步
     syncS3OnNoteMove: "\u79FB\u52A8\u7B14\u8BB0\u65F6\u540C\u6B65 S3 \u56FE\u7247\u8DEF\u5F84",
     syncS3OnNoteMoveDesc: "\u5F53\u7B14\u8BB0\u88AB\u79FB\u52A8\u6216\u91CD\u547D\u540D\u65F6\uFF0C\u81EA\u52A8\u5C06\u5176 S3 \u4E0A\u7684\u56FE\u7247\u8FC1\u79FB\u5230\u5BF9\u5E94\u7684\u65B0\u8DEF\u5F84\uFF0C\u5E76\u66F4\u65B0\u7B14\u8BB0\u4E2D\u7684\u6240\u6709\u94FE\u63A5\u3002",
+    excludedNotePaths: "\u4E0D\u5904\u7406\u7684\u7B14\u8BB0\u8DEF\u5F84",
+    excludedNotePathsDesc: "\u6BCF\u884C\u586B\u5199\u4E00\u4E2A Vault \u5185\u6587\u4EF6\u5939\u8DEF\u5F84\u3002\u8BE5\u8DEF\u5F84\u4E0B\u7684\u7B14\u8BB0\u4E0D\u4F1A\u88AB\u626B\u63CF\u3001\u4E0A\u4F20\u3001\u6539\u5199\u94FE\u63A5\u3001\u4E0B\u8F7D\u955C\u50CF\u6216\u540C\u6B65\u8DEF\u5F84\u3002\u9ED8\u8BA4\uFF1A06 \u5DF2\u5F52\u6863",
     s3PathSynced: "\u5DF2\u5C06 {count} \u5F20 S3 \u56FE\u7247\u8FC1\u79FB\u81F3\u65B0\u8DEF\u5F84\u3002",
     s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}",
+    commandResyncPaths: "\u91CD\u65B0\u540C\u6B65\u5168\u90E8 S3 \u56FE\u7247\u8DEF\u5F84",
+    resyncScanning: "\u6B63\u5728\u626B\u63CF\u8DEF\u5F84\u4E0D\u4E00\u81F4...\uFF08{current}/{total}\uFF09",
+    resyncNoMismatch: "\u6240\u6709 S3 \u56FE\u7247\u8DEF\u5F84\u5747\u5DF2\u540C\u6B65\uFF01",
+    resyncFoundMismatch: "\u53D1\u73B0 {count} \u5F20\u56FE\u7247\u8DEF\u5F84\u4E0D\u4E00\u81F4\uFF0C\u6B63\u5728\u4FEE\u590D...",
+    resyncProgress: "\u6B63\u5728\u91CD\u65B0\u540C\u6B65 S3 \u8DEF\u5F84...\uFF08{current}/{total}\uFF09",
+    resyncDone: "\u91CD\u65B0\u540C\u6B65\u5B8C\u6210 \u2014 \u5DF2\u4FEE\u590D: {fixed}  |  \u8DF3\u8FC7: {skipped}  |  \u5931\u8D25: {failed}",
+    resyncStartupNotice: "S3 \u56FE\u7247\u540C\u6B65\uFF1A\u53D1\u73B0 {count} \u7BC7\u7B14\u8BB0\u7684\u56FE\u7247\u8DEF\u5F84\u4E0D\u4E00\u81F4\u3002\u8BF7\u8FD0\u884C\u300C\u91CD\u65B0\u540C\u6B65\u5168\u90E8 S3 \u56FE\u7247\u8DEF\u5F84\u300D\u6765\u4FEE\u590D\u3002",
     // 链接切换与迁移
     commandToggleLinks: "\u5207\u6362\u56FE\u7247\u94FE\u63A5\uFF08\u672C\u5730 \u2194 \u4E91\u7AEF\uFF09",
     commandDownloadToLocal: "\u4E00\u952E\u4E0B\u8F7D\u4E91\u7AEF\u56FE\u7247\u81F3\u672C\u5730\u955C\u50CF",
@@ -4623,6 +4643,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         void save();
       })
     );
+    new import_obsidian4.Setting(containerEl).setName(t2("excludedNotePaths")).setDesc(t2("excludedNotePathsDesc")).addTextArea(
+      (text) => text.setPlaceholder("06 \u5DF2\u5F52\u6863").setValue(this.plugin.settings.excludedNotePaths.join("\n")).onChange((value) => {
+        this.plugin.settings.excludedNotePaths = value.split(/\r?\n/).map((path) => path.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")).filter(Boolean);
+        void save();
+      })
+    );
     new import_obsidian4.Setting(containerEl).setName(t2("localMirrorRoot")).setDesc(t2("localMirrorRootDesc")).addText(
       (text) => text.setPlaceholder("98 cloudflareR2").setValue(this.plugin.settings.localMirrorRoot).onChange((value) => {
         this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
@@ -4967,6 +4993,11 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           void this.downloadCloudToLocal();
         })
       );
+      menu.addItem(
+        (item) => item.setTitle(this.t("commandResyncPaths")).setIcon("refresh-cw").onClick(() => {
+          void this.resyncAllS3Paths();
+        })
+      );
       menu.showAtMouseEvent(evt);
     });
     this.addCommand({
@@ -4988,6 +5019,11 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       id: "download-cloud-to-local",
       name: this.t("commandDownloadToLocal"),
       callback: () => this.downloadCloudToLocal()
+    });
+    this.addCommand({
+      id: "resync-all-s3-paths",
+      name: this.t("commandResyncPaths"),
+      callback: () => this.resyncAllS3Paths()
     });
     this.addSettingTab(new S3ImageSyncSettingTab(this.app, this));
     this.registerEvent(
@@ -5024,6 +5060,9 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         }
       })
     );
+    if (this.settings.syncS3OnNoteMove) {
+      window.setTimeout(() => void this.startupPathIntegrityCheck(), 1e4);
+    }
   }
   onunload() {
     if (this.autoScanTimer)
@@ -5040,6 +5079,25 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   t(key, params = {}) {
     return t(this.locale, key, params);
+  }
+  isIgnoredNotePath(path) {
+    const normalizedPath = trimSlashes(String(path || "").replace(/\\/g, "/"));
+    return this.settings.excludedNotePaths.some((excludedPath) => {
+      const root = trimSlashes(excludedPath.replace(/\\/g, "/"));
+      return root !== "" && (normalizedPath === root || normalizedPath.startsWith(`${root}/`));
+    });
+  }
+  isIgnoredNote(file) {
+    return !!file && this.isIgnoredNotePath(file.path);
+  }
+  getLocalMirrorPathForCloudKey(cloudKey) {
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    const key = trimSlashes(cloudKey);
+    return mirrorRoot && key ? `${mirrorRoot}/${key}` : null;
+  }
+  isLocalMirrorPath(path) {
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    return mirrorRoot !== "" && (path === mirrorRoot || path.startsWith(`${mirrorRoot}/`));
   }
   configureAutoScan() {
     if (this.autoScanTimer)
@@ -5183,12 +5241,16 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return Date.now() - file.stat.mtime >= quietMs;
   }
   async findCandidatesInNote(noteFile, options) {
+    if (this.isIgnoredNote(noteFile))
+      return [];
     const text = await this.app.vault.read(noteFile);
     const refs = extractLocalRefs(text);
     const byKey = /* @__PURE__ */ new Map();
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
       if (!targetFile || !(targetFile instanceof import_obsidian6.TFile))
+        continue;
+      if (this.isLocalMirrorPath(targetFile.path))
         continue;
       if (options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
         continue;
@@ -5364,6 +5426,29 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       }
     }
   }
+  async copyLocalMirrorForKey(oldKey, newKey) {
+    const newPath = this.getLocalMirrorPathForCloudKey(newKey);
+    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
+    if (!newPath || !mirrorRoot)
+      return;
+    const oldExactPath = this.getLocalMirrorPathForCloudKey(oldKey);
+    const oldPath = oldExactPath && this.app.vault.getAbstractFileByPath(oldExactPath) instanceof import_obsidian6.TFile ? oldExactPath : this.findLocalMirrorForCloudKey(oldKey, mirrorRoot);
+    if (!oldPath)
+      return;
+    const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
+    if (!(oldFile instanceof import_obsidian6.TFile))
+      return;
+    const binary = await this.app.vault.readBinary(oldFile);
+    const parentDir = newPath.substring(0, newPath.lastIndexOf("/"));
+    if (parentDir)
+      await this.ensureFolderExists(parentDir);
+    const existing = this.app.vault.getAbstractFileByPath(newPath);
+    if (existing instanceof import_obsidian6.TFile) {
+      await this.app.vault.modifyBinary(existing, binary);
+    } else {
+      await this.app.vault.createBinary(newPath, binary);
+    }
+  }
   async uploadBuffer(binary, originalName, noteFile, originalFilePath) {
     let body = new Uint8Array(binary);
     const hash = await sha256Hex(body);
@@ -5415,19 +5500,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       notedir: noteDir,
       notename: noteName
     });
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    let localPath;
-    if (mirrorRoot) {
-      const keyStem = key.replace(/\.[^/.]+$/, "");
-      localPath = `${mirrorRoot}/${keyStem}.${originalExt}`;
-      const existing = this.app.vault.getAbstractFileByPath(localPath);
-      if (existing instanceof import_obsidian6.TFile) {
-        if (existing.path !== originalFilePath) {
-          const publicUrl2 = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
-          return { key, publicUrl: publicUrl2, localPath };
-        }
-      }
-    }
     await putS3Object(
       this.settings.s3,
       key,
@@ -5437,21 +5509,29 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       hash
     );
     const publicUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, key);
-    if (mirrorRoot && localPath) {
+    const localPath = this.getLocalMirrorPathForCloudKey(key);
+    if (!localPath) {
+      await deleteS3Object(this.settings.s3, key).catch(() => {
+      });
+      throw new Error("Local mirror root is required for image uploads.");
+    }
+    if (localPath) {
       try {
         const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
         if (parentDir) {
           await this.ensureFolderExists(parentDir);
         }
         const existing = this.app.vault.getAbstractFileByPath(localPath);
+        const mirrorBinary = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
         if (existing instanceof import_obsidian6.TFile) {
-          await this.app.vault.modifyBinary(existing, binary);
+          await this.app.vault.modifyBinary(existing, mirrorBinary);
         } else {
-          await this.app.vault.createBinary(localPath, binary);
+          await this.app.vault.createBinary(localPath, mirrorBinary);
         }
       } catch (error) {
-        console.warn(`Failed to write local mirror at ${localPath}:`, error);
-        localPath = void 0;
+        await deleteS3Object(this.settings.s3, key).catch(() => {
+        });
+        throw error;
       }
     }
     return { key, publicUrl, localPath };
@@ -5573,9 +5653,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         if (decodedUrl.startsWith(mirrorRoot)) {
           try {
             const relativePath = decodedUrl.substring(mirrorRoot.length + 1);
-            const stem = relativePath.replace(/\.[^/.]+$/, "");
-            const cloudExt = this.guessCloudExt(relativePath);
-            keys.push(`${stem}.${cloudExt}`);
+            keys.push(relativePath);
           } catch {
           }
         }
@@ -5589,6 +5667,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return decodeURIComponent(key);
   }
   async cacheRemoteUrls(file) {
+    if (this.isIgnoredNote(file))
+      return;
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
     try {
@@ -5636,6 +5716,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     }
   }
   async handleFolderDelete(folderPath) {
+    if (this.isIgnoredNotePath(folderPath))
+      return;
     const notesToDelete = [];
     for (const notePath of this.noteRemoteUrls.keys()) {
       if (notePath.startsWith(folderPath + "/")) {
@@ -5656,6 +5738,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     }
   }
   async handleNoteDelete(notePath) {
+    if (this.isIgnoredNotePath(notePath))
+      return;
     await this.cleanupLocalMirrorForNote(notePath);
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
@@ -5752,6 +5836,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   // ─── Remote Image Transfer ───────────────────────────────────────────
   async findRemoteCandidatesInNote(noteFile) {
+    if (this.isIgnoredNote(noteFile))
+      return [];
     const text = await this.app.vault.read(noteFile);
     const refs = extractRemoteImageRefs(text);
     const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
@@ -5941,7 +6027,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   // ─── Link Mode Toggle ──────────────────────────────────────────────
   async executeToggleLinks(targetMode, scope) {
-    const files = scope === "vault" ? this.app.vault.getMarkdownFiles() : [this.app.workspace.getActiveFile()].filter((f) => f instanceof import_obsidian6.TFile && f.extension === "md");
+    const candidateFiles = scope === "vault" ? this.app.vault.getMarkdownFiles() : [this.app.workspace.getActiveFile()].filter((f) => f instanceof import_obsidian6.TFile && f.extension === "md");
+    const files = candidateFiles.filter((file) => !this.isIgnoredNote(file));
     if (files.length === 0) {
       new import_obsidian6.Notice(this.t("openMarkdownFirst"));
       return;
@@ -5993,9 +6080,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         );
         next = next.replace(localRegex, (_match, labelPart, relativePathEncoded) => {
           const relativePath = decodeURIComponent(relativePathEncoded);
-          const stem = relativePath.replace(/\.[^/.]+$/, "");
-          const cloudExt = this.guessCloudExt(relativePath);
-          const cloudKey = `${stem}.${cloudExt}`;
+          const cloudKey = relativePath;
           const cloudUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, cloudKey);
           changed++;
           return `${labelPart}(${cloudUrl})`;
@@ -6006,6 +6091,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return changed;
   }
   findLocalMirrorForCloudKey(cloudKey, mirrorRoot) {
+    const exactPath = `${mirrorRoot}/${trimSlashes(cloudKey)}`;
+    if (this.app.vault.getAbstractFileByPath(exactPath) instanceof import_obsidian6.TFile) {
+      return exactPath;
+    }
     const stem = cloudKey.replace(/\.[^/.]+$/, "");
     const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
     const exactExt = cloudKey.split(".").pop();
@@ -6050,10 +6139,16 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     let failed = 0;
     const notice = new import_obsidian6.Notice(this.t("migrationWorking"), 0);
     for (const file of files) {
+      if (this.isIgnoredNote(file))
+        continue;
       const cloudKeys = this.extractRemoteUrls(await this.app.vault.read(file));
       for (const cloudKey of cloudKeys) {
-        const localStem = cloudKey.replace(/\.[^/.]+$/, "");
-        if (this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot)) {
+        const localPath = this.getLocalMirrorPathForCloudKey(cloudKey);
+        if (!localPath) {
+          failed++;
+          continue;
+        }
+        if (this.app.vault.getAbstractFileByPath(localPath) instanceof import_obsidian6.TFile) {
           skipped++;
           continue;
         }
@@ -6070,8 +6165,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
             failed++;
             continue;
           }
-          const cloudExt = (cloudKey.split(".").pop() || "webp").toLowerCase();
-          const localPath = `${mirrorRoot}/${localStem}.${cloudExt}`;
           const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
           if (parentDir) {
             await this.ensureFolderExists(parentDir);
@@ -6118,6 +6211,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
   async syncS3PathsOnRename(file, oldPath) {
     try {
+      if (this.isIgnoredNote(file) || this.isIgnoredNotePath(oldPath))
+        return;
       this.ensureS3Settings();
     } catch {
       return;
@@ -6166,7 +6261,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         continue;
       try {
         await copyS3Object(this.settings.s3, oldKey, newKey);
-        await deleteS3Object(this.settings.s3, oldKey);
+        await this.copyLocalMirrorForKey(oldKey, newKey);
         const newUrl = buildPublicUrl(
           this.settings.s3.customDomainName,
           this.settings.s3.endpoint,
@@ -6190,25 +6285,162 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       await this.saveSettings();
       new import_obsidian6.Notice(this.t("s3PathSynced", { count: movedCount }));
     }
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (mirrorRoot) {
-      const oldMirrorDir = oldDir ? `${mirrorRoot}/${sanitizeDir(oldDir)}/${sanitizeName(oldName)}` : `${mirrorRoot}/${sanitizeName(oldName)}`;
-      const newMirrorDir = newDir ? `${mirrorRoot}/${sanitizeDir(newDir)}/${sanitizeName(newName)}` : `${mirrorRoot}/${sanitizeName(newName)}`;
-      if (oldMirrorDir !== newMirrorDir) {
-        const oldFolder = this.app.vault.getAbstractFileByPath(oldMirrorDir);
-        if (oldFolder) {
-          try {
-            const newParent = newMirrorDir.substring(0, newMirrorDir.lastIndexOf("/"));
-            if (newParent && !this.app.vault.getAbstractFileByPath(newParent)) {
-              await this.app.vault.createFolder(newParent);
-            }
-            await this.app.vault.rename(oldFolder, newMirrorDir);
-          } catch (error) {
-            console.warn(`Failed to move mirror directory ${oldMirrorDir} -> ${newMirrorDir}:`, error);
+  }
+  // ─── Startup Path Integrity Check ──────────────────────────────────
+  async startupPathIntegrityCheck() {
+    try {
+      this.ensureS3Settings();
+    } catch {
+      return;
+    }
+    const files = this.app.vault.getMarkdownFiles();
+    let mismatchCount = 0;
+    for (const file of files) {
+      if (this.isIgnoredNote(file))
+        continue;
+      try {
+        const text = await this.app.vault.read(file);
+        const cloudKeys = this.extractRemoteUrls(text);
+        if (cloudKeys.length === 0)
+          continue;
+        const noteDir = file.parent?.path || "";
+        const noteName = file.basename;
+        const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
+        const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+        const expectedDirPrefix = sanitizeDir(noteDir);
+        const expectedNameSegment = sanitizeName(noteName);
+        for (const key of cloudKeys) {
+          const segments = key.split("/");
+          if (segments.length < 3)
+            continue;
+          const keyNotedir = segments.slice(0, -2).join("/");
+          if (keyNotedir !== expectedDirPrefix) {
+            mismatchCount++;
+            break;
           }
+        }
+      } catch {
+      }
+    }
+    if (mismatchCount > 0) {
+      new import_obsidian6.Notice(this.t("resyncStartupNotice", { count: mismatchCount }), 15e3);
+    }
+  }
+  // ─── Re-sync All S3 Paths ─────────────────────────────────────────
+  async resyncAllS3Paths() {
+    try {
+      this.ensureS3Settings();
+    } catch (e) {
+      new import_obsidian6.Notice(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const files = this.app.vault.getMarkdownFiles();
+    const notice = new import_obsidian6.Notice(this.t("resyncScanning", { current: 0, total: files.length }), 0);
+    const mismatches = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (this.isIgnoredNote(file))
+        continue;
+      if (i % 30 === 0) {
+        notice.setMessage(this.t("resyncScanning", { current: i, total: files.length }));
+      }
+      try {
+        const text = await this.app.vault.read(file);
+        const cloudKeys = this.extractRemoteUrls(text);
+        if (cloudKeys.length === 0)
+          continue;
+        const noteDir = file.parent?.path || "";
+        const noteName = file.basename;
+        const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
+        const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
+        const safeNewDir = sanitizeDir(noteDir);
+        const safeNewName = sanitizeName(noteName);
+        for (const oldKey of cloudKeys) {
+          const segments = oldKey.split("/");
+          if (segments.length < 3)
+            continue;
+          const keyNotedir = segments.slice(0, -2).join("/");
+          const keyNotename = segments[segments.length - 2];
+          const filename = segments[segments.length - 1];
+          if (keyNotedir === safeNewDir && keyNotename === safeNewName)
+            continue;
+          const newKeyParts = [];
+          if (safeNewDir)
+            newKeyParts.push(safeNewDir);
+          newKeyParts.push(safeNewName);
+          newKeyParts.push(filename);
+          const newKey = newKeyParts.join("/");
+          if (newKey !== oldKey) {
+            const oldUrl = buildPublicUrl(
+              this.settings.s3.customDomainName,
+              this.settings.s3.endpoint,
+              this.settings.s3.bucketName,
+              oldKey
+            );
+            mismatches.push({ file, oldKey, newKey, oldUrl });
+          }
+        }
+      } catch {
+      }
+    }
+    if (mismatches.length === 0) {
+      notice.hide();
+      new import_obsidian6.Notice(this.t("resyncNoMismatch"));
+      return;
+    }
+    notice.setMessage(this.t("resyncFoundMismatch", { count: mismatches.length }));
+    let fixed = 0;
+    let skipped = 0;
+    let failed = 0;
+    const byFile = /* @__PURE__ */ new Map();
+    for (const entry of mismatches) {
+      const arr = byFile.get(entry.file.path) || [];
+      arr.push(entry);
+      byFile.set(entry.file.path, arr);
+    }
+    let processed = 0;
+    for (const [filePath, entries] of byFile) {
+      const file = entries[0].file;
+      const urlReplacements = /* @__PURE__ */ new Map();
+      for (const entry of entries) {
+        processed++;
+        if (processed % 5 === 0) {
+          notice.setMessage(this.t("resyncProgress", { current: processed, total: mismatches.length }));
+        }
+        try {
+          await copyS3Object(this.settings.s3, entry.oldKey, entry.newKey);
+          await this.copyLocalMirrorForKey(entry.oldKey, entry.newKey);
+          const newUrl = buildPublicUrl(
+            this.settings.s3.customDomainName,
+            this.settings.s3.endpoint,
+            this.settings.s3.bucketName,
+            entry.newKey
+          );
+          urlReplacements.set(entry.oldUrl, newUrl);
+          fixed++;
+        } catch (error) {
+          console.error(`Resync: Failed to move S3 object ${entry.oldKey} -> ${entry.newKey}:`, error);
+          failed++;
+        }
+      }
+      if (urlReplacements.size > 0) {
+        try {
+          await this.app.vault.process(file, (content) => {
+            let next = content;
+            for (const [oldUrl, newUrl] of urlReplacements) {
+              next = replaceAllLiteral(next, oldUrl, newUrl);
+            }
+            return next;
+          });
+        } catch (error) {
+          console.error(`Resync: Failed to update URLs in ${filePath}:`, error);
         }
       }
     }
+    notice.hide();
+    const msg = this.t("resyncDone", { fixed, skipped, failed });
+    new import_obsidian6.Notice(msg, 1e4);
+    console.log(`S3 Image Sync: Resync complete \u2014 fixed: ${fixed}, skipped: ${skipped}, failed: ${failed}`);
   }
 };
 __publicField(_S3ImageSyncPlugin, "DOWNLOAD_MAX_RETRIES", 3);

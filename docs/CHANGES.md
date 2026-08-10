@@ -13,3 +13,12 @@
 4. **用户工作流提效**：去除了原先不必要的“本地图片保存路径”约束配置（因为一切均走向了粘贴截图全自动压缩与无缝云同步，旧时代的约束不再适用）。
 
 **结论**：`s3-image-sync-pro` 现已进入稳定支持 WebP 并且具备最高级别 R2 传输稳定性的版本阶段。
+
+## 2026-08-11 (v1.6.5): canonical cloud/local mirror paths
+
+- Unified package, manifest, lockfile, and compatibility-map version numbers at 1.6.5.
+- The local mirror now always follows the exact S3 object key, including when Cloud link mode is selected.
+- Cloud downloads, link toggles, startup checks, and re-sync use the same canonical path rule.
+- Added configurable ignored note paths for bulk actions.
+- Re-sync now preserves source cloud objects while copying to the canonical key.
+- Rewrote the README with the actual ribbon actions, safety behavior, and migration workflow.
