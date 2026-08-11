@@ -648,7 +648,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           await this.ensureFolderExists(parentDir);
         }
         const existing = this.app.vault.getAbstractFileByPath(localPath);
-        const mirrorBinary = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+        const mirrorBinary = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength);
         if (existing instanceof TFile) {
           await this.app.vault.modifyBinary(existing, mirrorBinary);
         } else {
@@ -1565,8 +1565,9 @@ export default class S3ImageSyncPlugin extends Plugin {
           if (segments.length < 3) continue;
 
           const keyNotedir = segments.slice(0, -2).join("/");
+          const keyNotename = segments[segments.length - 2];
 
-          if (keyNotedir !== expectedDirPrefix) {
+          if (keyNotedir !== expectedDirPrefix || keyNotename !== expectedNameSegment) {
             mismatchCount++;
             break; // One mismatch per note is enough
           }
@@ -1722,8 +1723,6 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     notice.hide();
     const msg = this.t("resyncDone", { fixed, skipped, failed });
-    new Notice(msg, 10000);
-    console.log(`S3 Image Sync: Resync complete — fixed: ${fixed}, skipped: ${skipped}, failed: ${failed}`);
-  }
+    new Notice(msg, 10000);  }
 }
 
