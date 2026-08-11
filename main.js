@@ -4420,7 +4420,7 @@ async function ensureWasmInit() {
   if (wasmInitialized)
     return;
   try {
-    const wasmModule = await WebAssembly.compile(webp_enc_default2.buffer);
+    const wasmModule = await WebAssembly.compile(webp_enc_default2);
     await init(wasmModule);
     wasmInitialized = true;
   } catch (e) {
@@ -6314,7 +6314,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           if (segments.length < 3)
             continue;
           const keyNotedir = segments.slice(0, -2).join("/");
-          if (keyNotedir !== expectedDirPrefix) {
+          const keyNotename = segments[segments.length - 2];
+          if (keyNotedir !== expectedDirPrefix || keyNotename !== expectedNameSegment) {
             mismatchCount++;
             break;
           }
@@ -6440,7 +6441,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     notice.hide();
     const msg = this.t("resyncDone", { fixed, skipped, failed });
     new import_obsidian6.Notice(msg, 1e4);
-    console.log(`S3 Image Sync: Resync complete \u2014 fixed: ${fixed}, skipped: ${skipped}, failed: ${failed}`);
   }
 };
 __publicField(_S3ImageSyncPlugin, "DOWNLOAD_MAX_RETRIES", 3);

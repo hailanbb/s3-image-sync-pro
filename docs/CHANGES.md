@@ -22,3 +22,9 @@
 - Added configurable ignored note paths for bulk actions.
 - Re-sync now preserves source cloud objects while copying to the canonical key.
 - Rewrote the README with the actual ribbon actions, safety behavior, and migration workflow.
+
+## 2026-08-11 (v1.6.6): Obsidian source-code compliance
+
+- Typed the bundled WebP WASM import as Uint8Array and removed unsafe access.
+- Removed the unnecessary ArrayBuffer assertion and completion console log.
+- Startup path checks now validate both the note directory and note-name segment.
