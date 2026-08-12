@@ -3120,6 +3120,7 @@ var DEFAULT_SETTINGS = {
   syncS3OnNoteMove: true,
   localMirrorRoot: "98 cloudflareR2",
   excludedNotePaths: ["06 \u5DF2\u5F52\u6863"],
+  excludedPathSyncKeyPrefixes: ["mpclipper"],
   linkMode: "local",
   logs: []
 };
@@ -3180,6 +3181,7 @@ function mergeSettings(defaults, loaded) {
     customExtensions: data.customExtensions || defaults.customExtensions,
     customReplacements: migrated.customReplacements || data.customReplacements || defaults.customReplacements,
     excludedNotePaths: Array.isArray(data.excludedNotePaths) ? data.excludedNotePaths.filter((path) => typeof path === "string") : defaults.excludedNotePaths,
+    excludedPathSyncKeyPrefixes: Array.isArray(data.excludedPathSyncKeyPrefixes) ? data.excludedPathSyncKeyPrefixes.filter((prefix) => typeof prefix === "string") : defaults.excludedPathSyncKeyPrefixes,
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : []
   };
 }
@@ -3857,6 +3859,8 @@ var I18N = {
     syncS3OnNoteMoveDesc: "When a note is moved or renamed, automatically move its S3 images to match the new path and update all URLs in the note.",
     excludedNotePaths: "Ignored note paths",
     excludedNotePathsDesc: "One vault-relative folder path per line. Notes in these folders are never scanned, uploaded, rewritten, downloaded, or path-synced. Default: 06 \u5DF2\u5F52\u6863",
+    excludedPathSyncKeyPrefixes: "Cloud key prefixes excluded from path sync",
+    excludedPathSyncKeyPrefixesDesc: "One S3 object-key prefix per line. Images managed by other tools remain available for display, download, and link switching, but are never moved by note-path sync. Default: mpclipper",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
     s3PathSyncFailed: "S3 path sync failed: {error}",
     commandResyncPaths: "Re-sync all S3 image paths",
@@ -4051,6 +4055,8 @@ var I18N = {
     syncS3OnNoteMoveDesc: "\u5F53\u7B14\u8BB0\u88AB\u79FB\u52A8\u6216\u91CD\u547D\u540D\u65F6\uFF0C\u81EA\u52A8\u5C06\u5176 S3 \u4E0A\u7684\u56FE\u7247\u8FC1\u79FB\u5230\u5BF9\u5E94\u7684\u65B0\u8DEF\u5F84\uFF0C\u5E76\u66F4\u65B0\u7B14\u8BB0\u4E2D\u7684\u6240\u6709\u94FE\u63A5\u3002",
     excludedNotePaths: "\u4E0D\u5904\u7406\u7684\u7B14\u8BB0\u8DEF\u5F84",
     excludedNotePathsDesc: "\u6BCF\u884C\u586B\u5199\u4E00\u4E2A Vault \u5185\u6587\u4EF6\u5939\u8DEF\u5F84\u3002\u8BE5\u8DEF\u5F84\u4E0B\u7684\u7B14\u8BB0\u4E0D\u4F1A\u88AB\u626B\u63CF\u3001\u4E0A\u4F20\u3001\u6539\u5199\u94FE\u63A5\u3001\u4E0B\u8F7D\u955C\u50CF\u6216\u540C\u6B65\u8DEF\u5F84\u3002\u9ED8\u8BA4\uFF1A06 \u5DF2\u5F52\u6863",
+    excludedPathSyncKeyPrefixes: "\u4E0D\u53C2\u4E0E\u8DEF\u5F84\u540C\u6B65\u7684\u4E91\u7AEF\u952E\u524D\u7F00",
+    excludedPathSyncKeyPrefixesDesc: "\u6BCF\u884C\u586B\u5199\u4E00\u4E2A S3 \u5BF9\u8C61\u952E\u524D\u7F00\u3002\u5176\u4ED6\u5DE5\u5177\u7BA1\u7406\u7684\u56FE\u7247\u4ECD\u53EF\u663E\u793A\u3001\u4E0B\u8F7D\u955C\u50CF\u548C\u5207\u6362\u94FE\u63A5\uFF0C\u4F46\u4E0D\u4F1A\u88AB\u672C\u63D2\u4EF6\u79FB\u52A8\u8DEF\u5F84\u3002\u9ED8\u8BA4\uFF1Ampclipper",
     s3PathSynced: "\u5DF2\u5C06 {count} \u5F20 S3 \u56FE\u7247\u8FC1\u79FB\u81F3\u65B0\u8DEF\u5F84\u3002",
     s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}",
     commandResyncPaths: "\u91CD\u65B0\u540C\u6B65\u5168\u90E8 S3 \u56FE\u7247\u8DEF\u5F84",
@@ -4649,6 +4655,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         void save();
       })
     );
+    new import_obsidian4.Setting(containerEl).setName(t2("excludedPathSyncKeyPrefixes")).setDesc(t2("excludedPathSyncKeyPrefixesDesc")).addTextArea(
+      (text) => text.setPlaceholder("mpclipper").setValue(this.plugin.settings.excludedPathSyncKeyPrefixes.join("\n")).onChange((value) => {
+        this.plugin.settings.excludedPathSyncKeyPrefixes = value.split(/\r?\n/).map((prefix) => prefix.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")).filter(Boolean);
+        void save();
+      })
+    );
     new import_obsidian4.Setting(containerEl).setName(t2("localMirrorRoot")).setDesc(t2("localMirrorRootDesc")).addText(
       (text) => text.setPlaceholder("98 cloudflareR2").setValue(this.plugin.settings.localMirrorRoot).onChange((value) => {
         this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
@@ -5089,6 +5101,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   }
   isIgnoredNote(file) {
     return !!file && this.isIgnoredNotePath(file.path);
+  }
+  isExcludedFromPathSync(cloudKey) {
+    const key = trimSlashes(cloudKey.replace(/\\/g, "/"));
+    return this.settings.excludedPathSyncKeyPrefixes.some((value) => {
+      const prefix = trimSlashes(value.replace(/\\/g, "/"));
+      return prefix !== "" && (key === prefix || key.startsWith(`${prefix}/`));
+    });
   }
   getLocalMirrorPathForCloudKey(cloudKey) {
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
@@ -6218,8 +6237,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       return;
     }
     const text = await this.app.vault.read(file);
-    const remoteUrls = this.extractRemoteUrls(text);
-    if (remoteUrls.length === 0)
+    const remoteKeys = this.extractRemoteUrls(text);
+    if (remoteKeys.length === 0)
       return;
     const oldLastSlash = oldPath.lastIndexOf("/");
     const oldDir = oldLastSlash >= 0 ? oldPath.substring(0, oldLastSlash) : "";
@@ -6236,8 +6255,9 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     const safeNewName = sanitizeName(newName);
     let movedCount = 0;
     const urlReplacements = /* @__PURE__ */ new Map();
-    for (const url of remoteUrls) {
-      const oldKey = this.remoteUrlToS3Key(url);
+    for (const oldKey of remoteKeys) {
+      if (this.isExcludedFromPathSync(oldKey))
+        continue;
       let newKey = oldKey;
       if (safeOldDir !== safeNewDir) {
         if (safeOldDir && newKey.startsWith(safeOldDir + "/")) {
@@ -6268,7 +6288,22 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           this.settings.s3.bucketName,
           newKey
         );
-        urlReplacements.set(url, newUrl);
+        const oldUrl = buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          oldKey
+        );
+        urlReplacements.set(oldUrl, newUrl);
+        const oldLocalPath = this.getLocalMirrorPathForCloudKey(oldKey);
+        const newLocalPath = this.getLocalMirrorPathForCloudKey(newKey);
+        if (oldLocalPath && newLocalPath) {
+          urlReplacements.set(oldLocalPath, newLocalPath);
+          urlReplacements.set(
+            oldLocalPath.split("/").map(encodeURIComponent).join("/"),
+            newLocalPath.split("/").map(encodeURIComponent).join("/")
+          );
+        }
         movedCount++;
       } catch (error) {
         console.error(`Failed to move S3 object ${oldKey} -> ${newKey}:`, error);
@@ -6310,6 +6345,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const expectedDirPrefix = sanitizeDir(noteDir);
         const expectedNameSegment = sanitizeName(noteName);
         for (const key of cloudKeys) {
+          if (this.isExcludedFromPathSync(key))
+            continue;
           const segments = key.split("/");
           if (segments.length < 3)
             continue;
@@ -6357,6 +6394,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const safeNewDir = sanitizeDir(noteDir);
         const safeNewName = sanitizeName(noteName);
         for (const oldKey of cloudKeys) {
+          if (this.isExcludedFromPathSync(oldKey))
+            continue;
           const segments = oldKey.split("/");
           if (segments.length < 3)
             continue;

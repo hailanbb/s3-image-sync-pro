@@ -202,6 +202,14 @@ export default class S3ImageSyncPlugin extends Plugin {
     return !!file && this.isIgnoredNotePath(file.path);
   }
 
+  private isExcludedFromPathSync(cloudKey: string): boolean {
+    const key = trimSlashes(cloudKey.replace(/\\/g, "/"));
+    return this.settings.excludedPathSyncKeyPrefixes.some((value) => {
+      const prefix = trimSlashes(value.replace(/\\/g, "/"));
+      return prefix !== "" && (key === prefix || key.startsWith(`${prefix}/`));
+    });
+  }
+
   private getLocalMirrorPathForCloudKey(cloudKey: string): string | null {
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
     const key = trimSlashes(cloudKey);
@@ -1450,8 +1458,8 @@ export default class S3ImageSyncPlugin extends Plugin {
     } catch { return; }
 
     const text = await this.app.vault.read(file);
-    const remoteUrls = this.extractRemoteUrls(text);
-    if (remoteUrls.length === 0) return;
+    const remoteKeys = this.extractRemoteUrls(text);
+    if (remoteKeys.length === 0) return;
 
     // Compute old/new notedir and notename
     const oldLastSlash = oldPath.lastIndexOf("/");
@@ -1474,8 +1482,8 @@ export default class S3ImageSyncPlugin extends Plugin {
     let movedCount = 0;
     const urlReplacements = new Map<string, string>();
 
-    for (const url of remoteUrls) {
-      const oldKey = this.remoteUrlToS3Key(url);
+    for (const oldKey of remoteKeys) {
+      if (this.isExcludedFromPathSync(oldKey)) continue;
       let newKey = oldKey;
 
       // Replace notedir segment in the key
@@ -1514,7 +1522,23 @@ export default class S3ImageSyncPlugin extends Plugin {
           this.settings.s3.bucketName,
           newKey
         );
-        urlReplacements.set(url, newUrl);
+        const oldUrl = buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          oldKey
+        );
+        urlReplacements.set(oldUrl, newUrl);
+
+        const oldLocalPath = this.getLocalMirrorPathForCloudKey(oldKey);
+        const newLocalPath = this.getLocalMirrorPathForCloudKey(newKey);
+        if (oldLocalPath && newLocalPath) {
+          urlReplacements.set(oldLocalPath, newLocalPath);
+          urlReplacements.set(
+            oldLocalPath.split("/").map(encodeURIComponent).join("/"),
+            newLocalPath.split("/").map(encodeURIComponent).join("/")
+          );
+        }
         movedCount++;
       } catch (error) {
         console.error(`Failed to move S3 object ${oldKey} -> ${newKey}:`, error);
@@ -1560,6 +1584,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         const expectedNameSegment = sanitizeName(noteName);
 
         for (const key of cloudKeys) {
+          if (this.isExcludedFromPathSync(key)) continue;
           // Skip keys that don't follow notedir/notename pattern (e.g. mpclipper date-based)
           const segments = key.split("/");
           if (segments.length < 3) continue;
@@ -1623,6 +1648,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         const safeNewName = sanitizeName(noteName);
 
         for (const oldKey of cloudKeys) {
+          if (this.isExcludedFromPathSync(oldKey)) continue;
           const segments = oldKey.split("/");
           // Must have at least 3 segments: notedir.../notename/filename
           if (segments.length < 3) continue;
@@ -1723,6 +1749,6 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     notice.hide();
     const msg = this.t("resyncDone", { fixed, skipped, failed });
-    new Notice(msg, 10000);  }
+    new Notice(msg, 10000);
+  }
 }
-

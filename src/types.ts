@@ -37,6 +37,7 @@ export interface PluginSettings {
   syncS3OnNoteMove: boolean;
   localMirrorRoot: string;
   excludedNotePaths: string[];
+  excludedPathSyncKeyPrefixes: string[];
   linkMode: "local" | "cloud";
   logs: LogEntry[];
 }

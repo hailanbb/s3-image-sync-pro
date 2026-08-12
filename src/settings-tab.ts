@@ -269,6 +269,22 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
+      .setName(t("excludedPathSyncKeyPrefixes"))
+      .setDesc(t("excludedPathSyncKeyPrefixesDesc"))
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("mpclipper")
+          .setValue(this.plugin.settings.excludedPathSyncKeyPrefixes.join("\n"))
+          .onChange((value) => {
+            this.plugin.settings.excludedPathSyncKeyPrefixes = value
+              .split(/\r?\n/)
+              .map((prefix) => prefix.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""))
+              .filter(Boolean);
+            void save();
+          })
+      );
+
+    new Setting(containerEl)
       .setName(t("localMirrorRoot"))
       .setDesc(t("localMirrorRootDesc"))
       .addText((text) =>

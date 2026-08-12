@@ -47,6 +47,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   syncS3OnNoteMove: true,
   localMirrorRoot: "98 cloudflareR2",
   excludedNotePaths: ["06 已归档"],
+  excludedPathSyncKeyPrefixes: ["mpclipper"],
   linkMode: "local",
   logs: [],
 };
@@ -83,6 +84,7 @@ interface LoadedSettings {
   customExtensions?: string[];
   customReplacements?: Record<string, ReplacementType>;
   excludedNotePaths?: string[];
+  excludedPathSyncKeyPrefixes?: string[];
   logs?: LogEntry[];
 }
 
@@ -156,6 +158,9 @@ export function mergeSettings(defaults: PluginSettings, loaded: unknown): Plugin
     excludedNotePaths: Array.isArray(data.excludedNotePaths)
       ? data.excludedNotePaths.filter((path): path is string => typeof path === "string")
       : defaults.excludedNotePaths,
+    excludedPathSyncKeyPrefixes: Array.isArray(data.excludedPathSyncKeyPrefixes)
+      ? data.excludedPathSyncKeyPrefixes.filter((prefix): prefix is string => typeof prefix === "string")
+      : defaults.excludedPathSyncKeyPrefixes,
     logs: Array.isArray(data.logs) ? data.logs.slice(0, 100) : [],
   };
 }
