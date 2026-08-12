@@ -94,7 +94,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "• \\{dd}: Current day (2 digits)\n" +
       "• \\{notedir}: Note's directory path in vault (e.g. Projects/Tech)\n" +
       "• \\{notename}: Note file name without extension\n" +
-      "Default: attachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
+      "Default: \\{notedir}/\\{notename}/\\{filename}-\\{hash-short}.\\{ext}\n" +
+      "Note-path sync requires the template to start with \\{notedir}/\\{notename}/.",
     testConnection: "Test connection",
     testConnectionDesc: "Click to verify your credentials are correct.",
     testing: "Testing...",
@@ -109,8 +110,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "Note: Scheduled auto-scan and delayed delete are disabled on mobile devices. Manual upload and replacement work normally.",
     attachmentRoot: "Image folder",
     autoUploadOnPaste: "Auto upload on paste / drop",
-    autoUploadOnPasteDesc: "Automatically intercept images pasted or dropped into the editor, upload them to S3 in the background, and insert the remote URL directly. (No local files will be saved).",
-    attachmentRootDesc: "Only files under this folder will be processed. Default: 99 Attachments",
+    autoUploadOnPasteDesc: "Upload pasted or dropped images to S3, write the exact local mirror, and insert the selected Cloud/Local link. Ignored note paths use Obsidian's normal paste/drop behavior.",
+    attachmentRootDesc: "Only scheduled and vault-preview scans process files under this vault-relative folder. Manual current-note scans are unrestricted. Default: 90-笔记系统/92-附件",
     deletePolicy: "After replacing links, delete local files?",
     deletePolicyDesc: "Choose what happens to the original local files after they are replaced with remote URLs.",
     deleteConfirm: "Ask me each time (recommended)",
@@ -119,7 +120,7 @@ export const I18N: Record<string, Record<string, string>> = {
     deleteDelayHours: "Delay before delete (hours)",
     deleteDelayHoursDesc: "Files will be moved to trash after this many hours.",
     deleteRemoteOnNoteDelete: "Delete remote images when note is deleted",
-    deleteRemoteOnNoteDeleteDesc: "When a note is deleted, also delete its remote S3/R2 images. Each image belongs to its own note — no cross-reference checking.",
+    deleteRemoteOnNoteDeleteDesc: "When a note is deleted, delete its unshared S3/R2 images and exact local mirrors. Objects referenced by another note are preserved. Removing a link alone never deletes an object.",
     webpCompression: "WebP compression",
     webpCompressionDesc: "Convert images to WebP format before uploading (WASM-based, no Canvas API). Reduces file size significantly.",
     webpQuality: "WebP quality",
@@ -195,6 +196,7 @@ export const I18N: Record<string, Record<string, string>> = {
     resyncProgress: "Re-syncing S3 paths... ({current}/{total})",
     resyncDone: "Re-sync complete — Fixed: {fixed}  |  Skipped: {skipped}  |  Failed: {failed}",
     resyncStartupNotice: "S3 Image Sync: Found {count} note(s) with mismatched image paths. Run \"Re-sync all S3 image paths\" to fix.",
+    resyncUnsupportedTemplate: "Path sync requires the upload template to start with \\{notedir}/\\{notename}/. The current custom template was not changed.",
 
     // Link toggle & migration
     commandToggleLinks: "Toggle image links (local ↔ cloud)",
@@ -315,7 +317,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "• \\{dd}：2位当前日期 (如 17)\n" +
       "• \\{notedir}：笔记所在目录路径 (如 项目/技术)\n" +
       "• \\{notename}：笔记文件名 (不含扩展名)\n" +
-      "默认值：attachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
+      "默认值：\\{notedir}/\\{notename}/\\{filename}-\\{hash-short}.\\{ext}\n" +
+      "路径同步要求模板以 \\{notedir}/\\{notename}/ 开头。",
     testConnection: "测试连接",
     testConnectionDesc: "点击验证凭据是否正确。",
     testing: "测试中...",
@@ -330,8 +333,8 @@ export const I18N: Record<string, Record<string, string>> = {
       "提示：移动端不支持定时自动扫描和延迟删除。手动上传和替换功能正常使用。",
     attachmentRoot: "图片文件夹",
     autoUploadOnPaste: "粘贴/拖拽图片自动上传",
-    autoUploadOnPasteDesc: "开启后，直接在编辑器中粘贴或拖拽的图片将被无感拦截，直接后台上传至 S3 并替换为云端链接（本地不再保存原图垃圾）。",
-    attachmentRootDesc: "只处理此文件夹下的图片。默认：90-笔记系统/92-附件",
+    autoUploadOnPasteDesc: "把粘贴或拖拽的图片上传到 S3、写入精确本地镜像，并插入所选的云端/本地链接。不处理路径中的笔记交回 Obsidian 按默认方式处理。",
+    attachmentRootDesc: "只有定时扫描和全库预览受此 Vault 相对目录限制；手动扫描当前笔记不受限制。默认：90-笔记系统/92-附件",
     deletePolicy: "替换链接后，是否删除本地文件？",
     deletePolicyDesc: "选择替换为远程链接后，原本地文件的处理方式。",
     deleteConfirm: "每次询问我（推荐）",
@@ -340,7 +343,7 @@ export const I18N: Record<string, Record<string, string>> = {
     deleteDelayHours: "延迟删除时间（小时）",
     deleteDelayHoursDesc: "文件将在指定小时后移入回收站。",
     deleteRemoteOnNoteDelete: "删除笔记时同步删除云端图片",
-    deleteRemoteOnNoteDeleteDesc: "删除笔记时，自动删除该笔记中引用的 S3/R2 远程图片。图片跟着笔记走，不做跨笔记引用检查。",
+    deleteRemoteOnNoteDeleteDesc: "删除笔记时，只删除未被其他笔记引用的 S3/R2 图片及其精确本地镜像；共享对象会保留。仅移除图片链接不会触发删除。",
     webpCompression: "WebP 压缩",
     webpCompressionDesc: "上传前将图片转换为 WebP 格式（基于 WASM 编码器），可大幅减小文件体积。",
     webpQuality: "压缩质量",
@@ -416,6 +419,7 @@ export const I18N: Record<string, Record<string, string>> = {
     resyncProgress: "正在重新同步 S3 路径...（{current}/{total}）",
     resyncDone: "重新同步完成 — 已修复: {fixed}  |  跳过: {skipped}  |  失败: {failed}",
     resyncStartupNotice: "S3 图片同步：发现 {count} 篇笔记的图片路径不一致。请运行「重新同步全部 S3 图片路径」来修复。",
+    resyncUnsupportedTemplate: "路径同步要求上传模板以 \\{notedir}/\\{notename}/ 开头；当前自定义模板未被修改。",
 
     // 链接切换与迁移
     commandToggleLinks: "切换图片链接（本地 ↔ 云端）",

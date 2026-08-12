@@ -10,6 +10,35 @@ export function safeFilename(name: string): string {
   return String(name || "attachment").replace(/[\\/:*?"<>|#%]+/g, "-");
 }
 
+export function usesCanonicalNotePathTemplate(template: string): boolean {
+  const normalized = trimSlashes(template).replace(/\\/g, "/");
+  return normalized.startsWith("{notedir}/{notename}/");
+}
+
+export function buildCanonicalNoteKey(
+  cloudKey: string,
+  noteDir: string,
+  noteName: string
+): string | null {
+  const segments = trimSlashes(cloudKey).split("/").filter(Boolean);
+  if (segments.length < 2) return null;
+  const safeDir = noteDir.replace(/[\\:*?"<>|]+/g, "-");
+  const safeName = noteName.replace(/[\\/:*?"<>|#%]+/g, "-");
+  const filename = segments[segments.length - 1];
+  return [safeDir, safeName, filename].filter(Boolean).join("/");
+}
+
+export function isKeyReferencedElsewhere(
+  noteRemoteUrls: ReadonlyMap<string, readonly string[]>,
+  key: string,
+  excludedNotePath: string
+): boolean {
+  for (const [notePath, keys] of noteRemoteUrls) {
+    if (notePath !== excludedNotePath && keys.includes(key)) return true;
+  }
+  return false;
+}
+
 export function renderPathTemplate(
   template: string,
   values: { ext: string; hash: string; hash2: string; filename: string; notedir?: string; notename?: string }

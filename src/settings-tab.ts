@@ -366,6 +366,22 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         );
     }
 
+    new Setting(containerEl)
+      .setName(t("attachmentRoot"))
+      .setDesc(t("attachmentRootDesc"))
+      .addText((text) =>
+        text
+          .setPlaceholder("90-笔记系统/92-附件")
+          .setValue(this.plugin.settings.attachmentRoot)
+          .onChange((value) => {
+            this.plugin.settings.attachmentRoot = value
+              .trim()
+              .replace(/\\/g, "/")
+              .replace(/^\/+|\/+$/g, "") || "90-笔记系统/92-附件";
+            debouncedSave();
+          })
+      );
+
     if (!this.plugin.isMobile) {
       new Setting(containerEl)
         .setName(t("automaticScan"))

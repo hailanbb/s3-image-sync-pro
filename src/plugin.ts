@@ -17,12 +17,15 @@ import { putS3Object, deleteS3Object, copyS3Object } from "./s3-client";
 import { sha256Hex } from "./crypto";
 import {
   buildPublicUrl,
+  buildCanonicalNoteKey,
   contentTypeForExt,
   escapeMarkdownLabel,
+  isKeyReferencedElsewhere,
   renderPathTemplate,
   replaceAllLiteral,
   safeFilename,
   trimSlashes,
+  usesCanonicalNotePathTemplate,
 } from "./utils";
 import { detectLocaleFromApp, t as translate } from "./i18n";
 import { CandidateModal } from "./candidate-modal";
@@ -158,9 +161,13 @@ export default class S3ImageSyncPlugin extends Plugin {
     // Sync S3 paths when note is moved/renamed
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
-          void this.syncS3PathsOnRename(file, oldPath);
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        const cachedKeys = this.noteRemoteUrls.get(oldPath);
+        if (cachedKeys) {
+          this.noteRemoteUrls.delete(oldPath);
+          this.noteRemoteUrls.set(file.path, cachedKeys);
         }
+        if (this.settings.syncS3OnNoteMove) void this.syncS3PathsOnRename(file, oldPath);
       })
     );
 
@@ -208,6 +215,15 @@ export default class S3ImageSyncPlugin extends Plugin {
       const prefix = trimSlashes(value.replace(/\\/g, "/"));
       return prefix !== "" && (key === prefix || key.startsWith(`${prefix}/`));
     });
+  }
+
+  private usesCanonicalNotePathTemplate(): boolean {
+    return usesCanonicalNotePathTemplate(this.settings.s3.pathTemplate || "");
+  }
+
+  private getCanonicalKeyForNote(cloudKey: string, noteFile: TFile): string | null {
+    if (!this.usesCanonicalNotePathTemplate()) return null;
+    return buildCanonicalNoteKey(cloudKey, noteFile.parent?.path || "", noteFile.basename);
   }
 
   private getLocalMirrorPathForCloudKey(cloudKey: string): string | null {
@@ -824,39 +840,10 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async cacheRemoteUrls(file: TFile): Promise<void> {
-    if (this.isIgnoredNote(file)) return;
     if (!this.settings.deleteRemoteOnNoteDelete) return;
     try {
       const text = await this.app.vault.read(file);
       const urls = this.extractRemoteUrls(text);
-      const oldUrls = this.noteRemoteUrls.get(file.path) || [];
-
-      // Detect URLs that were removed from the note and clean them up
-      const removedUrls = oldUrls.filter((u) => !urls.includes(u));
-      if (removedUrls.length > 0) {
-        const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-        for (const key of removedUrls) {
-          // Delete from S3
-          try {
-            await deleteS3Object(this.settings.s3, key);
-          } catch (e) {
-            console.warn(`Failed to delete orphan S3 object ${key}:`, e);
-          }
-          // Delete from local mirror
-          if (mirrorRoot) {
-            const stem = key.replace(/\.[^/.]+$/, "");
-            const exts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
-            for (const ext of exts) {
-              const localPath = `${mirrorRoot}/${stem}.${ext}`;
-              const localFile = this.app.vault.getAbstractFileByPath(localPath);
-              if (localFile) {
-                try { await this.app.fileManager.trashFile(localFile); } catch { /* ignore */ }
-                break;
-              }
-            }
-          }
-        }
-      }
 
       if (urls.length > 0) {
         this.noteRemoteUrls.set(file.path, urls);
@@ -866,6 +853,15 @@ export default class S3ImageSyncPlugin extends Plugin {
     } catch {
       // File might not be readable
     }
+  }
+
+  private async trashLocalMirrorForKey(key: string): Promise<boolean> {
+    const localPath = this.getLocalMirrorPathForCloudKey(key);
+    if (!localPath) return false;
+    const localFile = this.app.vault.getAbstractFileByPath(localPath);
+    if (!(localFile instanceof TFile)) return false;
+    await this.app.fileManager.trashFile(localFile);
+    return true;
   }
 
   async initRemoteUrlCache(): Promise<void> {
@@ -886,35 +882,35 @@ export default class S3ImageSyncPlugin extends Plugin {
     for (const notePath of notesToDelete) {
       await this.handleNoteDelete(notePath);
     }
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (mirrorRoot) {
-      const localFolder = `${mirrorRoot}/${folderPath}`;
-      const existing = this.app.vault.getAbstractFileByPath(localFolder);
-      if (existing instanceof TFolder) {
-        await this.app.fileManager.trashFile(existing).catch(() => {});
-      }
-    }
   }
 
   async handleNoteDelete(notePath: string): Promise<void> {
     if (this.isIgnoredNotePath(notePath)) return;
-    // 1. Always cleanup local mirror directory for this note!
-    await this.cleanupLocalMirrorForNote(notePath);
-
     if (!this.settings.deleteRemoteOnNoteDelete) return;
     const keys = this.noteRemoteUrls.get(notePath);
     if (!keys || keys.length === 0) return;
     this.noteRemoteUrls.delete(notePath);
 
     for (const key of keys) {
+      if (isKeyReferencedElsewhere(this.noteRemoteUrls, key, notePath)) {
+        this.addLog({
+          status: "remote-delete-skipped-shared-reference",
+          notePath,
+          sourcePath: "",
+          remoteUrl: key,
+          trashed: false,
+        });
+        continue;
+      }
       try {
         await deleteS3Object(this.settings.s3, key);
+        const trashed = await this.trashLocalMirrorForKey(key).catch(() => false);
         this.addLog({
           status: "remote-deleted-on-note-delete",
           notePath,
           sourcePath: "",
-          remoteUrl: key, // Log the key
-          trashed: false,
+          remoteUrl: key,
+          trashed,
         });
       } catch (error) {
         console.error(`Failed to delete remote object for ${key}:`, error);
@@ -932,6 +928,8 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   private async onEditorPaste(evt: ClipboardEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> {
     if (!this.settings.enabled || !this.settings.autoUploadOnPaste) return;
+    const noteFile = info.file || this.app.workspace.getActiveFile();
+    if (this.isIgnoredNote(noteFile)) return;
     
     const files = Array.from(evt.clipboardData?.files || []);
     const images = files.filter(f => f.type.startsWith("image/"));
@@ -944,11 +942,13 @@ export default class S3ImageSyncPlugin extends Plugin {
       new Notice(this.t("missingS3", { settings: (e as Error).message }));
       return;
     }
-    await this.handlePastedImages(images, editor, info.file);
+    await this.handlePastedImages(images, editor, noteFile);
   }
 
   private async onEditorDrop(evt: DragEvent, editor: Editor, info: MarkdownView | MarkdownFileInfo): Promise<void> {
     if (!this.settings.enabled || !this.settings.autoUploadOnPaste) return;
+    const noteFile = info.file || this.app.workspace.getActiveFile();
+    if (this.isIgnoredNote(noteFile)) return;
     
     const files = Array.from(evt.dataTransfer?.files || []);
     const images = files.filter(f => f.type.startsWith("image/"));
@@ -961,7 +961,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       new Notice(this.t("missingS3", { settings: (e as Error).message }));
       return;
     }
-    await this.handlePastedImages(images, editor, info.file);
+    await this.handlePastedImages(images, editor, noteFile);
   }
 
   private async handlePastedImages(images: File[], editor: Editor, noteFile: TFile | null): Promise<void> {
@@ -1172,7 +1172,6 @@ export default class S3ImageSyncPlugin extends Plugin {
   private remoteTransferDebounceTimers = new Map<string, number>();
 
   configureAutoRemoteTransfer(): void {
-    if (!this.settings.autoTransferRemoteImages) return;
     // Listen for note creation (e.g. Web Clipper)
     this.registerEvent(
       this.app.vault.on("create", (file) => {
@@ -1414,104 +1413,26 @@ export default class S3ImageSyncPlugin extends Plugin {
     new Notice(`迁移完成 — ${msgParts.join("  |  ")}`);
   }
 
-  // ─── Note Delete �?Mirror Cleanup ──────────────────────────────────
-
-  private async cleanupLocalMirrorForNote(notePath: string): Promise<void> {
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (!mirrorRoot) return;
-
-    // Derive the note's mirror subdirectory
-    const noteDir = notePath.substring(0, notePath.lastIndexOf("/")) || "";
-    const noteName = notePath.substring(notePath.lastIndexOf("/") + 1).replace(/\.md$/, "");
-    const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
-    const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-    const mirrorDir = noteDir
-      ? `${mirrorRoot}/${sanitizeDir(noteDir)}/${sanitizeName(noteName)}`
-      : `${mirrorRoot}/${sanitizeName(noteName)}`;
-
-    const folder = this.app.vault.getAbstractFileByPath(mirrorDir);
-    if (!(folder instanceof TFolder)) return;
-
-    // Trash files individually — vault.trash on a TFolder calls fs.rename on every child,
-    // which throws ENOENT if any file was already deleted externally.
-    for (const child of folder.children) {
-      try {
-        await this.app.fileManager.trashFile(child);
-      } catch {
-        // File may already be missing — ignore
-      }
-    }
-    // Trash the now-empty folder
-    try {
-      await this.app.fileManager.trashFile(folder);
-    } catch {
-      // Folder may already be gone
-    }
-  }
-
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
 
   private async syncS3PathsOnRename(file: TFile, oldPath: string): Promise<void> {
     try {
-    if (this.isIgnoredNote(file) || this.isIgnoredNotePath(oldPath)) return;
+      if (this.isIgnoredNote(file) || this.isIgnoredNotePath(oldPath)) return;
       this.ensureS3Settings();
     } catch { return; }
+    if (!this.usesCanonicalNotePathTemplate()) return;
 
     const text = await this.app.vault.read(file);
     const remoteKeys = this.extractRemoteUrls(text);
     if (remoteKeys.length === 0) return;
-
-    // Compute old/new notedir and notename
-    const oldLastSlash = oldPath.lastIndexOf("/");
-    const oldDir = oldLastSlash >= 0 ? oldPath.substring(0, oldLastSlash) : "";
-    const oldName = (oldLastSlash >= 0 ? oldPath.substring(oldLastSlash + 1) : oldPath).replace(/\.md$/, "");
-    const newDir = file.parent?.path || "";
-    const newName = file.basename;
-
-    // If neither directory nor name changed, nothing to do
-    if (oldDir === newDir && oldName === newName) return;
-
-    // Sanitize the same way renderPathTemplate does
-    const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
-    const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-    const safeOldDir = sanitizeDir(oldDir);
-    const safeNewDir = sanitizeDir(newDir);
-    const safeOldName = sanitizeName(oldName);
-    const safeNewName = sanitizeName(newName);
 
     let movedCount = 0;
     const urlReplacements = new Map<string, string>();
 
     for (const oldKey of remoteKeys) {
       if (this.isExcludedFromPathSync(oldKey)) continue;
-      let newKey = oldKey;
-
-      // Replace notedir segment in the key
-      if (safeOldDir !== safeNewDir) {
-        if (safeOldDir && newKey.startsWith(safeOldDir + "/")) {
-          newKey = safeNewDir + (safeNewDir ? "/" : "") + newKey.slice(safeOldDir.length + 1);
-        } else if (!safeOldDir && safeNewDir) {
-          // Note moved from vault root into a folder
-          newKey = safeNewDir + "/" + newKey;
-        } else if (safeOldDir && !safeNewDir) {
-          // Note moved from folder to vault root
-          newKey = newKey.slice(safeOldDir.length + 1);
-        }
-      }
-
-      // Replace notename segment in the key
-      if (safeOldName !== safeNewName) {
-        // Find the notename as a path segment (between slashes or at start)
-        const oldNameSegment = "/" + safeOldName + "/";
-        const newNameSegment = "/" + safeNewName + "/";
-        if (newKey.includes(oldNameSegment)) {
-          newKey = newKey.replace(oldNameSegment, newNameSegment);
-        } else if (newKey.startsWith(safeOldName + "/")) {
-          newKey = safeNewName + "/" + newKey.slice(safeOldName.length + 1);
-        }
-      }
-
-      if (newKey === oldKey) continue;
+      const newKey = this.getCanonicalKeyForNote(oldKey, file);
+      if (!newKey || newKey === oldKey) continue;
 
       try {
         await copyS3Object(this.settings.s3, oldKey, newKey);
@@ -1565,6 +1486,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     try {
       this.ensureS3Settings();
     } catch { return; }
+    if (!this.usesCanonicalNotePathTemplate()) return;
 
     const files = this.app.vault.getMarkdownFiles();
     let mismatchCount = 0;
@@ -1576,23 +1498,10 @@ export default class S3ImageSyncPlugin extends Plugin {
         const cloudKeys = this.extractRemoteUrls(text);
         if (cloudKeys.length === 0) continue;
 
-        const noteDir = file.parent?.path || "";
-        const noteName = file.basename;
-        const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
-        const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-        const expectedDirPrefix = sanitizeDir(noteDir);
-        const expectedNameSegment = sanitizeName(noteName);
-
         for (const key of cloudKeys) {
           if (this.isExcludedFromPathSync(key)) continue;
-          // Skip keys that don't follow notedir/notename pattern (e.g. mpclipper date-based)
-          const segments = key.split("/");
-          if (segments.length < 3) continue;
-
-          const keyNotedir = segments.slice(0, -2).join("/");
-          const keyNotename = segments[segments.length - 2];
-
-          if (keyNotedir !== expectedDirPrefix || keyNotename !== expectedNameSegment) {
+          const expectedKey = this.getCanonicalKeyForNote(key, file);
+          if (expectedKey && expectedKey !== key) {
             mismatchCount++;
             break; // One mismatch per note is enough
           }
@@ -1616,6 +1525,10 @@ export default class S3ImageSyncPlugin extends Plugin {
       new Notice(e instanceof Error ? e.message : String(e));
       return;
     }
+    if (!this.usesCanonicalNotePathTemplate()) {
+      new Notice(this.t("resyncUnsupportedTemplate"), 10000);
+      return;
+    }
 
     const files = this.app.vault.getMarkdownFiles();
     const notice = new Notice(this.t("resyncScanning", { current: 0, total: files.length }), 0);
@@ -1628,6 +1541,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       oldUrl: string;
     }
     const mismatches: MismatchEntry[] = [];
+    let skipped = 0;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -1640,42 +1554,25 @@ export default class S3ImageSyncPlugin extends Plugin {
         const cloudKeys = this.extractRemoteUrls(text);
         if (cloudKeys.length === 0) continue;
 
-        const noteDir = file.parent?.path || "";
-        const noteName = file.basename;
-        const sanitizeDir = (d: string) => d.replace(/[\\:*?"<>|]+/g, "-");
-        const sanitizeName = (n: string) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-        const safeNewDir = sanitizeDir(noteDir);
-        const safeNewName = sanitizeName(noteName);
-
         for (const oldKey of cloudKeys) {
-          if (this.isExcludedFromPathSync(oldKey)) continue;
-          const segments = oldKey.split("/");
-          // Must have at least 3 segments: notedir.../notename/filename
-          if (segments.length < 3) continue;
-
-          const keyNotedir = segments.slice(0, -2).join("/");
-          const keyNotename = segments[segments.length - 2];
-          const filename = segments[segments.length - 1];
-
-          // Check if notedir or notename is different
-          if (keyNotedir === safeNewDir && keyNotename === safeNewName) continue;
-
-          // Compute the new key
-          const newKeyParts = [];
-          if (safeNewDir) newKeyParts.push(safeNewDir);
-          newKeyParts.push(safeNewName);
-          newKeyParts.push(filename);
-          const newKey = newKeyParts.join("/");
-
-          if (newKey !== oldKey) {
-            const oldUrl = buildPublicUrl(
-              this.settings.s3.customDomainName,
-              this.settings.s3.endpoint,
-              this.settings.s3.bucketName,
-              oldKey
-            );
-            mismatches.push({ file, oldKey, newKey, oldUrl });
+          if (this.isExcludedFromPathSync(oldKey)) {
+            skipped++;
+            continue;
           }
+          const newKey = this.getCanonicalKeyForNote(oldKey, file);
+          if (!newKey) {
+            skipped++;
+            continue;
+          }
+          if (newKey === oldKey) continue;
+
+          const oldUrl = buildPublicUrl(
+            this.settings.s3.customDomainName,
+            this.settings.s3.endpoint,
+            this.settings.s3.bucketName,
+            oldKey
+          );
+          mismatches.push({ file, oldKey, newKey, oldUrl });
         }
       } catch {
         // Skip unreadable files
@@ -1692,7 +1589,6 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     // Phase 2: Fix mismatches
     let fixed = 0;
-    let skipped = 0;
     let failed = 0;
     // Group by file to batch URL replacements
     const byFile = new Map<string, MismatchEntry[]>();
@@ -1723,6 +1619,15 @@ export default class S3ImageSyncPlugin extends Plugin {
             entry.newKey
           );
           urlReplacements.set(entry.oldUrl, newUrl);
+          const oldLocalPath = this.getLocalMirrorPathForCloudKey(entry.oldKey);
+          const newLocalPath = this.getLocalMirrorPathForCloudKey(entry.newKey);
+          if (oldLocalPath && newLocalPath) {
+            urlReplacements.set(oldLocalPath, newLocalPath);
+            urlReplacements.set(
+              oldLocalPath.split("/").map(encodeURIComponent).join("/"),
+              newLocalPath.split("/").map(encodeURIComponent).join("/")
+            );
+          }
           fixed++;
         } catch (error) {
           console.error(`Resync: Failed to move S3 object ${entry.oldKey} -> ${entry.newKey}:`, error);

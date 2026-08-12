@@ -35,3 +35,13 @@
 - Defaulted the exclusion to `mpclipper` so shared-domain images managed by MpClipper Sync are not moved or reported as mismatches.
 - Kept excluded-prefix images available for cloud display, local-mirror download, and local/cloud link switching.
 - Fixed note-rename synchronization incorrectly parsing an already-extracted S3 key as a full URL, and preserved both cloud and local link modes during rewrites.
+
+## 2026-08-12 (v1.6.8): safe path sync and deletion boundaries
+
+- Added a visible setting for the vault-relative attachment root used by scheduled and preview scans.
+- Made paste/drop uploads respect ignored note paths while leaving Obsidian's default behavior intact.
+- Fixed full re-sync for local mirror links and two-segment keys created by notes in the vault root.
+- Limited note-path synchronization to templates beginning with `{notedir}/{notename}/` to prevent custom date/hash layouts from being rewritten incorrectly.
+- Made the remote-image transfer toggle take effect immediately without reloading the plugin.
+- Restricted remote deletion to actual note deletion, preserved objects referenced by other notes, and stopped deleting mirrors when the setting is disabled.
+- Corrected settings help and README behavior descriptions, including the implemented date variables and canonical default template.
