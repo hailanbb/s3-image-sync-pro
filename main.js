@@ -3360,6 +3360,26 @@ function trimSlashes(path) {
 function safeFilename(name) {
   return String(name || "attachment").replace(/[\\/:*?"<>|#%]+/g, "-");
 }
+function usesCanonicalNotePathTemplate(template) {
+  const normalized = trimSlashes(template).replace(/\\/g, "/");
+  return normalized.startsWith("{notedir}/{notename}/");
+}
+function buildCanonicalNoteKey(cloudKey, noteDir, noteName) {
+  const segments = trimSlashes(cloudKey).split("/").filter(Boolean);
+  if (segments.length < 2)
+    return null;
+  const safeDir = noteDir.replace(/[\\:*?"<>|]+/g, "-");
+  const safeName = noteName.replace(/[\\/:*?"<>|#%]+/g, "-");
+  const filename = segments[segments.length - 1];
+  return [safeDir, safeName, filename].filter(Boolean).join("/");
+}
+function isKeyReferencedElsewhere(noteRemoteUrls, key, excludedNotePath) {
+  for (const [notePath, keys] of noteRemoteUrls) {
+    if (notePath !== excludedNotePath && keys.includes(key))
+      return true;
+  }
+  return false;
+}
 function renderPathTemplate(template, values) {
   const now = /* @__PURE__ */ new Date();
   const yyyy = String(now.getFullYear());
@@ -3775,7 +3795,7 @@ var I18N = {
     publicDomain: "Public access URL",
     publicDomainDesc: "The URL prefix for accessing uploaded files, e.g. https://pub-xxx.r2.dev",
     objectPathTemplate: "Upload path template",
-    pathTemplateDesc: "Dynamically customize the S3 upload path. Supported variables:\n\u2022 \\{ext}: File extension (e.g. png, jpg)\n\u2022 \\{hash}: 64-char full SHA-256 hash\n\u2022 \\{hash-short}: 32-char short hash\n\u2022 \\{hash2}: First 2 chars of hash (for partition)\n\u2022 \\{filename}: Original file name (excluding extension)\n\u2022 \\{yyyy}: Current year (4 digits)\n\u2022 \\{MM}: Current month (2 digits)\n\u2022 \\{dd}: Current day (2 digits)\n\u2022 \\{notedir}: Note's directory path in vault (e.g. Projects/Tech)\n\u2022 \\{notename}: Note file name without extension\nDefault: attachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
+    pathTemplateDesc: "Dynamically customize the S3 upload path. Supported variables:\n\u2022 \\{ext}: File extension (e.g. png, jpg)\n\u2022 \\{hash}: 64-char full SHA-256 hash\n\u2022 \\{hash-short}: 32-char short hash\n\u2022 \\{hash2}: First 2 chars of hash (for partition)\n\u2022 \\{filename}: Original file name (excluding extension)\n\u2022 \\{yyyy}: Current year (4 digits)\n\u2022 \\{MM}: Current month (2 digits)\n\u2022 \\{dd}: Current day (2 digits)\n\u2022 \\{notedir}: Note's directory path in vault (e.g. Projects/Tech)\n\u2022 \\{notename}: Note file name without extension\nDefault: \\{notedir}/\\{notename}/\\{filename}-\\{hash-short}.\\{ext}\nNote-path sync requires the template to start with \\{notedir}/\\{notename}/.",
     testConnection: "Test connection",
     testConnectionDesc: "Click to verify your credentials are correct.",
     testing: "Testing...",
@@ -3788,8 +3808,8 @@ var I18N = {
     mobileHint: "Note: Scheduled auto-scan and delayed delete are disabled on mobile devices. Manual upload and replacement work normally.",
     attachmentRoot: "Image folder",
     autoUploadOnPaste: "Auto upload on paste / drop",
-    autoUploadOnPasteDesc: "Automatically intercept images pasted or dropped into the editor, upload them to S3 in the background, and insert the remote URL directly. (No local files will be saved).",
-    attachmentRootDesc: "Only files under this folder will be processed. Default: 99 Attachments",
+    autoUploadOnPasteDesc: "Upload pasted or dropped images to S3, write the exact local mirror, and insert the selected Cloud/Local link. Ignored note paths use Obsidian's normal paste/drop behavior.",
+    attachmentRootDesc: "Only scheduled and vault-preview scans process files under this vault-relative folder. Manual current-note scans are unrestricted. Default: 90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6",
     deletePolicy: "After replacing links, delete local files?",
     deletePolicyDesc: "Choose what happens to the original local files after they are replaced with remote URLs.",
     deleteConfirm: "Ask me each time (recommended)",
@@ -3798,7 +3818,7 @@ var I18N = {
     deleteDelayHours: "Delay before delete (hours)",
     deleteDelayHoursDesc: "Files will be moved to trash after this many hours.",
     deleteRemoteOnNoteDelete: "Delete remote images when note is deleted",
-    deleteRemoteOnNoteDeleteDesc: "When a note is deleted, also delete its remote S3/R2 images. Each image belongs to its own note \u2014 no cross-reference checking.",
+    deleteRemoteOnNoteDeleteDesc: "When a note is deleted, delete its unshared S3/R2 images and exact local mirrors. Objects referenced by another note are preserved. Removing a link alone never deletes an object.",
     webpCompression: "WebP compression",
     webpCompressionDesc: "Convert images to WebP format before uploading (WASM-based, no Canvas API). Reduces file size significantly.",
     webpQuality: "WebP quality",
@@ -3870,6 +3890,7 @@ var I18N = {
     resyncProgress: "Re-syncing S3 paths... ({current}/{total})",
     resyncDone: "Re-sync complete \u2014 Fixed: {fixed}  |  Skipped: {skipped}  |  Failed: {failed}",
     resyncStartupNotice: 'S3 Image Sync: Found {count} note(s) with mismatched image paths. Run "Re-sync all S3 image paths" to fix.',
+    resyncUnsupportedTemplate: "Path sync requires the upload template to start with \\{notedir}/\\{notename}/. The current custom template was not changed.",
     // Link toggle & migration
     commandToggleLinks: "Toggle image links (local \u2194 cloud)",
     commandDownloadToLocal: "Download all cloud images to local mirror",
@@ -3971,7 +3992,7 @@ var I18N = {
     publicDomain: "\u516C\u5F00\u8BBF\u95EE URL",
     publicDomainDesc: "\u4E0A\u4F20\u6587\u4EF6\u7684\u8BBF\u95EE\u524D\u7F00\uFF0C\u4F8B\u5982 https://pub-xxx.r2.dev",
     objectPathTemplate: "\u4E0A\u4F20\u8DEF\u5F84\u6A21\u677F",
-    pathTemplateDesc: "\u81EA\u5B9A\u4E49 S3 \u4E0A\u4F20\u8DEF\u5F84\u3002\u652F\u6301\u4EE5\u4E0B\u53D8\u91CF\uFF1A\n\u2022 \\{ext}\uFF1A\u6587\u4EF6\u6269\u5C55\u540D/\u540E\u7F00 (\u5982 png\u3001jpg \u7B49)\n\u2022 \\{hash}\uFF1A64\u4F4D\u5B8C\u6574 SHA-256 \u6587\u4EF6\u54C8\u5E0C\u503C\n\u2022 \\{hash-short}\uFF1A32\u4F4D\u77ED SHA-256 \u6587\u4EF6\u54C8\u5E0C\u503C\n\u2022 \\{hash2}\uFF1ASHA-256 \u54C8\u5E0C\u503C\u7684\u524D2\u4F4D\u5B57\u7B26 (\u9002\u5408\u6D77\u91CF\u6587\u4EF6\u4E8C\u7EA7\u5206\u6D41)\n\u2022 \\{filename}\uFF1A\u539F\u59CB\u6587\u4EF6\u540D (\u4E0D\u542B\u6269\u5C55\u540D)\n\u2022 \\{yyyy}\uFF1A4\u4F4D\u5F53\u524D\u5E74\u4EFD (\u5982 2026)\n\u2022 \\{MM}\uFF1A2\u4F4D\u5F53\u524D\u6708\u4EFD (\u5982 06)\n\u2022 \\{dd}\uFF1A2\u4F4D\u5F53\u524D\u65E5\u671F (\u5982 17)\n\u2022 \\{notedir}\uFF1A\u7B14\u8BB0\u6240\u5728\u76EE\u5F55\u8DEF\u5F84 (\u5982 \u9879\u76EE/\u6280\u672F)\n\u2022 \\{notename}\uFF1A\u7B14\u8BB0\u6587\u4EF6\u540D (\u4E0D\u542B\u6269\u5C55\u540D)\n\u9ED8\u8BA4\u503C\uFF1Aattachments/\\{ext}/\\{hash2}/\\{hash}.\\{ext}",
+    pathTemplateDesc: "\u81EA\u5B9A\u4E49 S3 \u4E0A\u4F20\u8DEF\u5F84\u3002\u652F\u6301\u4EE5\u4E0B\u53D8\u91CF\uFF1A\n\u2022 \\{ext}\uFF1A\u6587\u4EF6\u6269\u5C55\u540D/\u540E\u7F00 (\u5982 png\u3001jpg \u7B49)\n\u2022 \\{hash}\uFF1A64\u4F4D\u5B8C\u6574 SHA-256 \u6587\u4EF6\u54C8\u5E0C\u503C\n\u2022 \\{hash-short}\uFF1A32\u4F4D\u77ED SHA-256 \u6587\u4EF6\u54C8\u5E0C\u503C\n\u2022 \\{hash2}\uFF1ASHA-256 \u54C8\u5E0C\u503C\u7684\u524D2\u4F4D\u5B57\u7B26 (\u9002\u5408\u6D77\u91CF\u6587\u4EF6\u4E8C\u7EA7\u5206\u6D41)\n\u2022 \\{filename}\uFF1A\u539F\u59CB\u6587\u4EF6\u540D (\u4E0D\u542B\u6269\u5C55\u540D)\n\u2022 \\{yyyy}\uFF1A4\u4F4D\u5F53\u524D\u5E74\u4EFD (\u5982 2026)\n\u2022 \\{MM}\uFF1A2\u4F4D\u5F53\u524D\u6708\u4EFD (\u5982 06)\n\u2022 \\{dd}\uFF1A2\u4F4D\u5F53\u524D\u65E5\u671F (\u5982 17)\n\u2022 \\{notedir}\uFF1A\u7B14\u8BB0\u6240\u5728\u76EE\u5F55\u8DEF\u5F84 (\u5982 \u9879\u76EE/\u6280\u672F)\n\u2022 \\{notename}\uFF1A\u7B14\u8BB0\u6587\u4EF6\u540D (\u4E0D\u542B\u6269\u5C55\u540D)\n\u9ED8\u8BA4\u503C\uFF1A\\{notedir}/\\{notename}/\\{filename}-\\{hash-short}.\\{ext}\n\u8DEF\u5F84\u540C\u6B65\u8981\u6C42\u6A21\u677F\u4EE5 \\{notedir}/\\{notename}/ \u5F00\u5934\u3002",
     testConnection: "\u6D4B\u8BD5\u8FDE\u63A5",
     testConnectionDesc: "\u70B9\u51FB\u9A8C\u8BC1\u51ED\u636E\u662F\u5426\u6B63\u786E\u3002",
     testing: "\u6D4B\u8BD5\u4E2D...",
@@ -3984,8 +4005,8 @@ var I18N = {
     mobileHint: "\u63D0\u793A\uFF1A\u79FB\u52A8\u7AEF\u4E0D\u652F\u6301\u5B9A\u65F6\u81EA\u52A8\u626B\u63CF\u548C\u5EF6\u8FDF\u5220\u9664\u3002\u624B\u52A8\u4E0A\u4F20\u548C\u66FF\u6362\u529F\u80FD\u6B63\u5E38\u4F7F\u7528\u3002",
     attachmentRoot: "\u56FE\u7247\u6587\u4EF6\u5939",
     autoUploadOnPaste: "\u7C98\u8D34/\u62D6\u62FD\u56FE\u7247\u81EA\u52A8\u4E0A\u4F20",
-    autoUploadOnPasteDesc: "\u5F00\u542F\u540E\uFF0C\u76F4\u63A5\u5728\u7F16\u8F91\u5668\u4E2D\u7C98\u8D34\u6216\u62D6\u62FD\u7684\u56FE\u7247\u5C06\u88AB\u65E0\u611F\u62E6\u622A\uFF0C\u76F4\u63A5\u540E\u53F0\u4E0A\u4F20\u81F3 S3 \u5E76\u66FF\u6362\u4E3A\u4E91\u7AEF\u94FE\u63A5\uFF08\u672C\u5730\u4E0D\u518D\u4FDD\u5B58\u539F\u56FE\u5783\u573E\uFF09\u3002",
-    attachmentRootDesc: "\u53EA\u5904\u7406\u6B64\u6587\u4EF6\u5939\u4E0B\u7684\u56FE\u7247\u3002\u9ED8\u8BA4\uFF1A90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6",
+    autoUploadOnPasteDesc: "\u628A\u7C98\u8D34\u6216\u62D6\u62FD\u7684\u56FE\u7247\u4E0A\u4F20\u5230 S3\u3001\u5199\u5165\u7CBE\u786E\u672C\u5730\u955C\u50CF\uFF0C\u5E76\u63D2\u5165\u6240\u9009\u7684\u4E91\u7AEF/\u672C\u5730\u94FE\u63A5\u3002\u4E0D\u5904\u7406\u8DEF\u5F84\u4E2D\u7684\u7B14\u8BB0\u4EA4\u56DE Obsidian \u6309\u9ED8\u8BA4\u65B9\u5F0F\u5904\u7406\u3002",
+    attachmentRootDesc: "\u53EA\u6709\u5B9A\u65F6\u626B\u63CF\u548C\u5168\u5E93\u9884\u89C8\u53D7\u6B64 Vault \u76F8\u5BF9\u76EE\u5F55\u9650\u5236\uFF1B\u624B\u52A8\u626B\u63CF\u5F53\u524D\u7B14\u8BB0\u4E0D\u53D7\u9650\u5236\u3002\u9ED8\u8BA4\uFF1A90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6",
     deletePolicy: "\u66FF\u6362\u94FE\u63A5\u540E\uFF0C\u662F\u5426\u5220\u9664\u672C\u5730\u6587\u4EF6\uFF1F",
     deletePolicyDesc: "\u9009\u62E9\u66FF\u6362\u4E3A\u8FDC\u7A0B\u94FE\u63A5\u540E\uFF0C\u539F\u672C\u5730\u6587\u4EF6\u7684\u5904\u7406\u65B9\u5F0F\u3002",
     deleteConfirm: "\u6BCF\u6B21\u8BE2\u95EE\u6211\uFF08\u63A8\u8350\uFF09",
@@ -3994,7 +4015,7 @@ var I18N = {
     deleteDelayHours: "\u5EF6\u8FDF\u5220\u9664\u65F6\u95F4\uFF08\u5C0F\u65F6\uFF09",
     deleteDelayHoursDesc: "\u6587\u4EF6\u5C06\u5728\u6307\u5B9A\u5C0F\u65F6\u540E\u79FB\u5165\u56DE\u6536\u7AD9\u3002",
     deleteRemoteOnNoteDelete: "\u5220\u9664\u7B14\u8BB0\u65F6\u540C\u6B65\u5220\u9664\u4E91\u7AEF\u56FE\u7247",
-    deleteRemoteOnNoteDeleteDesc: "\u5220\u9664\u7B14\u8BB0\u65F6\uFF0C\u81EA\u52A8\u5220\u9664\u8BE5\u7B14\u8BB0\u4E2D\u5F15\u7528\u7684 S3/R2 \u8FDC\u7A0B\u56FE\u7247\u3002\u56FE\u7247\u8DDF\u7740\u7B14\u8BB0\u8D70\uFF0C\u4E0D\u505A\u8DE8\u7B14\u8BB0\u5F15\u7528\u68C0\u67E5\u3002",
+    deleteRemoteOnNoteDeleteDesc: "\u5220\u9664\u7B14\u8BB0\u65F6\uFF0C\u53EA\u5220\u9664\u672A\u88AB\u5176\u4ED6\u7B14\u8BB0\u5F15\u7528\u7684 S3/R2 \u56FE\u7247\u53CA\u5176\u7CBE\u786E\u672C\u5730\u955C\u50CF\uFF1B\u5171\u4EAB\u5BF9\u8C61\u4F1A\u4FDD\u7559\u3002\u4EC5\u79FB\u9664\u56FE\u7247\u94FE\u63A5\u4E0D\u4F1A\u89E6\u53D1\u5220\u9664\u3002",
     webpCompression: "WebP \u538B\u7F29",
     webpCompressionDesc: "\u4E0A\u4F20\u524D\u5C06\u56FE\u7247\u8F6C\u6362\u4E3A WebP \u683C\u5F0F\uFF08\u57FA\u4E8E WASM \u7F16\u7801\u5668\uFF09\uFF0C\u53EF\u5927\u5E45\u51CF\u5C0F\u6587\u4EF6\u4F53\u79EF\u3002",
     webpQuality: "\u538B\u7F29\u8D28\u91CF",
@@ -4066,6 +4087,7 @@ var I18N = {
     resyncProgress: "\u6B63\u5728\u91CD\u65B0\u540C\u6B65 S3 \u8DEF\u5F84...\uFF08{current}/{total}\uFF09",
     resyncDone: "\u91CD\u65B0\u540C\u6B65\u5B8C\u6210 \u2014 \u5DF2\u4FEE\u590D: {fixed}  |  \u8DF3\u8FC7: {skipped}  |  \u5931\u8D25: {failed}",
     resyncStartupNotice: "S3 \u56FE\u7247\u540C\u6B65\uFF1A\u53D1\u73B0 {count} \u7BC7\u7B14\u8BB0\u7684\u56FE\u7247\u8DEF\u5F84\u4E0D\u4E00\u81F4\u3002\u8BF7\u8FD0\u884C\u300C\u91CD\u65B0\u540C\u6B65\u5168\u90E8 S3 \u56FE\u7247\u8DEF\u5F84\u300D\u6765\u4FEE\u590D\u3002",
+    resyncUnsupportedTemplate: "\u8DEF\u5F84\u540C\u6B65\u8981\u6C42\u4E0A\u4F20\u6A21\u677F\u4EE5 \\{notedir}/\\{notename}/ \u5F00\u5934\uFF1B\u5F53\u524D\u81EA\u5B9A\u4E49\u6A21\u677F\u672A\u88AB\u4FEE\u6539\u3002",
     // 链接切换与迁移
     commandToggleLinks: "\u5207\u6362\u56FE\u7247\u94FE\u63A5\uFF08\u672C\u5730 \u2194 \u4E91\u7AEF\uFF09",
     commandDownloadToLocal: "\u4E00\u952E\u4E0B\u8F7D\u4E91\u7AEF\u56FE\u7247\u81F3\u672C\u5730\u955C\u50CF",
@@ -4702,6 +4724,12 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         })
       );
     }
+    new import_obsidian4.Setting(containerEl).setName(t2("attachmentRoot")).setDesc(t2("attachmentRootDesc")).addText(
+      (text) => text.setPlaceholder("90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6").setValue(this.plugin.settings.attachmentRoot).onChange((value) => {
+        this.plugin.settings.attachmentRoot = value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "") || "90-\u7B14\u8BB0\u7CFB\u7EDF/92-\u9644\u4EF6";
+        debouncedSave();
+      })
+    );
     if (!this.plugin.isMobile) {
       new import_obsidian4.Setting(containerEl).setName(t2("automaticScan")).setDesc(t2("automaticScanDesc")).addToggle(
         (toggle) => toggle.setValue(this.plugin.settings.autoScanEnabled).onChange((value) => {
@@ -5067,9 +5095,15 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     this.configureAutoRemoteTransfer();
     this.registerEvent(
       this.app.vault.on("rename", (file, oldPath) => {
-        if (file instanceof import_obsidian6.TFile && file.extension === "md" && this.settings.syncS3OnNoteMove) {
-          void this.syncS3PathsOnRename(file, oldPath);
+        if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
+          return;
+        const cachedKeys = this.noteRemoteUrls.get(oldPath);
+        if (cachedKeys) {
+          this.noteRemoteUrls.delete(oldPath);
+          this.noteRemoteUrls.set(file.path, cachedKeys);
         }
+        if (this.settings.syncS3OnNoteMove)
+          void this.syncS3PathsOnRename(file, oldPath);
       })
     );
     if (this.settings.syncS3OnNoteMove) {
@@ -5108,6 +5142,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       const prefix = trimSlashes(value.replace(/\\/g, "/"));
       return prefix !== "" && (key === prefix || key.startsWith(`${prefix}/`));
     });
+  }
+  usesCanonicalNotePathTemplate() {
+    return usesCanonicalNotePathTemplate(this.settings.s3.pathTemplate || "");
+  }
+  getCanonicalKeyForNote(cloudKey, noteFile) {
+    if (!this.usesCanonicalNotePathTemplate())
+      return null;
+    return buildCanonicalNoteKey(cloudKey, noteFile.parent?.path || "", noteFile.basename);
   }
   getLocalMirrorPathForCloudKey(cloudKey) {
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
@@ -5686,40 +5728,11 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return decodeURIComponent(key);
   }
   async cacheRemoteUrls(file) {
-    if (this.isIgnoredNote(file))
-      return;
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
     try {
       const text = await this.app.vault.read(file);
       const urls = this.extractRemoteUrls(text);
-      const oldUrls = this.noteRemoteUrls.get(file.path) || [];
-      const removedUrls = oldUrls.filter((u) => !urls.includes(u));
-      if (removedUrls.length > 0) {
-        const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-        for (const key of removedUrls) {
-          try {
-            await deleteS3Object(this.settings.s3, key);
-          } catch (e) {
-            console.warn(`Failed to delete orphan S3 object ${key}:`, e);
-          }
-          if (mirrorRoot) {
-            const stem = key.replace(/\.[^/.]+$/, "");
-            const exts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
-            for (const ext of exts) {
-              const localPath = `${mirrorRoot}/${stem}.${ext}`;
-              const localFile = this.app.vault.getAbstractFileByPath(localPath);
-              if (localFile) {
-                try {
-                  await this.app.fileManager.trashFile(localFile);
-                } catch {
-                }
-                break;
-              }
-            }
-          }
-        }
-      }
       if (urls.length > 0) {
         this.noteRemoteUrls.set(file.path, urls);
       } else {
@@ -5727,6 +5740,16 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       }
     } catch {
     }
+  }
+  async trashLocalMirrorForKey(key) {
+    const localPath = this.getLocalMirrorPathForCloudKey(key);
+    if (!localPath)
+      return false;
+    const localFile = this.app.vault.getAbstractFileByPath(localPath);
+    if (!(localFile instanceof import_obsidian6.TFile))
+      return false;
+    await this.app.fileManager.trashFile(localFile);
+    return true;
   }
   async initRemoteUrlCache() {
     const files = this.app.vault.getMarkdownFiles();
@@ -5746,20 +5769,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     for (const notePath of notesToDelete) {
       await this.handleNoteDelete(notePath);
     }
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (mirrorRoot) {
-      const localFolder = `${mirrorRoot}/${folderPath}`;
-      const existing = this.app.vault.getAbstractFileByPath(localFolder);
-      if (existing instanceof import_obsidian6.TFolder) {
-        await this.app.fileManager.trashFile(existing).catch(() => {
-        });
-      }
-    }
   }
   async handleNoteDelete(notePath) {
     if (this.isIgnoredNotePath(notePath))
       return;
-    await this.cleanupLocalMirrorForNote(notePath);
     if (!this.settings.deleteRemoteOnNoteDelete)
       return;
     const keys = this.noteRemoteUrls.get(notePath);
@@ -5767,15 +5780,25 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       return;
     this.noteRemoteUrls.delete(notePath);
     for (const key of keys) {
+      if (isKeyReferencedElsewhere(this.noteRemoteUrls, key, notePath)) {
+        this.addLog({
+          status: "remote-delete-skipped-shared-reference",
+          notePath,
+          sourcePath: "",
+          remoteUrl: key,
+          trashed: false
+        });
+        continue;
+      }
       try {
         await deleteS3Object(this.settings.s3, key);
+        const trashed = await this.trashLocalMirrorForKey(key).catch(() => false);
         this.addLog({
           status: "remote-deleted-on-note-delete",
           notePath,
           sourcePath: "",
           remoteUrl: key,
-          // Log the key
-          trashed: false
+          trashed
         });
       } catch (error) {
         console.error(`Failed to delete remote object for ${key}:`, error);
@@ -5793,6 +5816,9 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   async onEditorPaste(evt, editor, info) {
     if (!this.settings.enabled || !this.settings.autoUploadOnPaste)
       return;
+    const noteFile = info.file || this.app.workspace.getActiveFile();
+    if (this.isIgnoredNote(noteFile))
+      return;
     const files = Array.from(evt.clipboardData?.files || []);
     const images = files.filter((f) => f.type.startsWith("image/"));
     if (images.length === 0)
@@ -5804,10 +5830,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       new import_obsidian6.Notice(this.t("missingS3", { settings: e.message }));
       return;
     }
-    await this.handlePastedImages(images, editor, info.file);
+    await this.handlePastedImages(images, editor, noteFile);
   }
   async onEditorDrop(evt, editor, info) {
     if (!this.settings.enabled || !this.settings.autoUploadOnPaste)
+      return;
+    const noteFile = info.file || this.app.workspace.getActiveFile();
+    if (this.isIgnoredNote(noteFile))
       return;
     const files = Array.from(evt.dataTransfer?.files || []);
     const images = files.filter((f) => f.type.startsWith("image/"));
@@ -5820,7 +5849,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       new import_obsidian6.Notice(this.t("missingS3", { settings: e.message }));
       return;
     }
-    await this.handlePastedImages(images, editor, info.file);
+    await this.handlePastedImages(images, editor, noteFile);
   }
   async handlePastedImages(images, editor, noteFile) {
     for (const file of images) {
@@ -5991,8 +6020,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return { replaced };
   }
   configureAutoRemoteTransfer() {
-    if (!this.settings.autoTransferRemoteImages)
-      return;
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
@@ -6203,30 +6230,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       msgParts.push(`\u5931\u8D25: ${failed}`);
     new import_obsidian6.Notice(`\u8FC1\u79FB\u5B8C\u6210 \u2014 ${msgParts.join("  |  ")}`);
   }
-  // ─── Note Delete �?Mirror Cleanup ──────────────────────────────────
-  async cleanupLocalMirrorForNote(notePath) {
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (!mirrorRoot)
-      return;
-    const noteDir = notePath.substring(0, notePath.lastIndexOf("/")) || "";
-    const noteName = notePath.substring(notePath.lastIndexOf("/") + 1).replace(/\.md$/, "");
-    const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
-    const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-    const mirrorDir = noteDir ? `${mirrorRoot}/${sanitizeDir(noteDir)}/${sanitizeName(noteName)}` : `${mirrorRoot}/${sanitizeName(noteName)}`;
-    const folder = this.app.vault.getAbstractFileByPath(mirrorDir);
-    if (!(folder instanceof import_obsidian6.TFolder))
-      return;
-    for (const child of folder.children) {
-      try {
-        await this.app.fileManager.trashFile(child);
-      } catch {
-      }
-    }
-    try {
-      await this.app.fileManager.trashFile(folder);
-    } catch {
-    }
-  }
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
   async syncS3PathsOnRename(file, oldPath) {
     try {
@@ -6236,48 +6239,19 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     } catch {
       return;
     }
+    if (!this.usesCanonicalNotePathTemplate())
+      return;
     const text = await this.app.vault.read(file);
     const remoteKeys = this.extractRemoteUrls(text);
     if (remoteKeys.length === 0)
       return;
-    const oldLastSlash = oldPath.lastIndexOf("/");
-    const oldDir = oldLastSlash >= 0 ? oldPath.substring(0, oldLastSlash) : "";
-    const oldName = (oldLastSlash >= 0 ? oldPath.substring(oldLastSlash + 1) : oldPath).replace(/\.md$/, "");
-    const newDir = file.parent?.path || "";
-    const newName = file.basename;
-    if (oldDir === newDir && oldName === newName)
-      return;
-    const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
-    const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-    const safeOldDir = sanitizeDir(oldDir);
-    const safeNewDir = sanitizeDir(newDir);
-    const safeOldName = sanitizeName(oldName);
-    const safeNewName = sanitizeName(newName);
     let movedCount = 0;
     const urlReplacements = /* @__PURE__ */ new Map();
     for (const oldKey of remoteKeys) {
       if (this.isExcludedFromPathSync(oldKey))
         continue;
-      let newKey = oldKey;
-      if (safeOldDir !== safeNewDir) {
-        if (safeOldDir && newKey.startsWith(safeOldDir + "/")) {
-          newKey = safeNewDir + (safeNewDir ? "/" : "") + newKey.slice(safeOldDir.length + 1);
-        } else if (!safeOldDir && safeNewDir) {
-          newKey = safeNewDir + "/" + newKey;
-        } else if (safeOldDir && !safeNewDir) {
-          newKey = newKey.slice(safeOldDir.length + 1);
-        }
-      }
-      if (safeOldName !== safeNewName) {
-        const oldNameSegment = "/" + safeOldName + "/";
-        const newNameSegment = "/" + safeNewName + "/";
-        if (newKey.includes(oldNameSegment)) {
-          newKey = newKey.replace(oldNameSegment, newNameSegment);
-        } else if (newKey.startsWith(safeOldName + "/")) {
-          newKey = safeNewName + "/" + newKey.slice(safeOldName.length + 1);
-        }
-      }
-      if (newKey === oldKey)
+      const newKey = this.getCanonicalKeyForNote(oldKey, file);
+      if (!newKey || newKey === oldKey)
         continue;
       try {
         await copyS3Object(this.settings.s3, oldKey, newKey);
@@ -6328,6 +6302,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     } catch {
       return;
     }
+    if (!this.usesCanonicalNotePathTemplate())
+      return;
     const files = this.app.vault.getMarkdownFiles();
     let mismatchCount = 0;
     for (const file of files) {
@@ -6338,21 +6314,11 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const cloudKeys = this.extractRemoteUrls(text);
         if (cloudKeys.length === 0)
           continue;
-        const noteDir = file.parent?.path || "";
-        const noteName = file.basename;
-        const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
-        const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-        const expectedDirPrefix = sanitizeDir(noteDir);
-        const expectedNameSegment = sanitizeName(noteName);
         for (const key of cloudKeys) {
           if (this.isExcludedFromPathSync(key))
             continue;
-          const segments = key.split("/");
-          if (segments.length < 3)
-            continue;
-          const keyNotedir = segments.slice(0, -2).join("/");
-          const keyNotename = segments[segments.length - 2];
-          if (keyNotedir !== expectedDirPrefix || keyNotename !== expectedNameSegment) {
+          const expectedKey = this.getCanonicalKeyForNote(key, file);
+          if (expectedKey && expectedKey !== key) {
             mismatchCount++;
             break;
           }
@@ -6372,9 +6338,14 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       new import_obsidian6.Notice(e instanceof Error ? e.message : String(e));
       return;
     }
+    if (!this.usesCanonicalNotePathTemplate()) {
+      new import_obsidian6.Notice(this.t("resyncUnsupportedTemplate"), 1e4);
+      return;
+    }
     const files = this.app.vault.getMarkdownFiles();
     const notice = new import_obsidian6.Notice(this.t("resyncScanning", { current: 0, total: files.length }), 0);
     const mismatches = [];
+    let skipped = 0;
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       if (this.isIgnoredNote(file))
@@ -6387,38 +6358,25 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const cloudKeys = this.extractRemoteUrls(text);
         if (cloudKeys.length === 0)
           continue;
-        const noteDir = file.parent?.path || "";
-        const noteName = file.basename;
-        const sanitizeDir = (d) => d.replace(/[\\:*?"<>|]+/g, "-");
-        const sanitizeName = (n) => n.replace(/[\\/:*?"<>|#%]+/g, "-");
-        const safeNewDir = sanitizeDir(noteDir);
-        const safeNewName = sanitizeName(noteName);
         for (const oldKey of cloudKeys) {
-          if (this.isExcludedFromPathSync(oldKey))
+          if (this.isExcludedFromPathSync(oldKey)) {
+            skipped++;
             continue;
-          const segments = oldKey.split("/");
-          if (segments.length < 3)
-            continue;
-          const keyNotedir = segments.slice(0, -2).join("/");
-          const keyNotename = segments[segments.length - 2];
-          const filename = segments[segments.length - 1];
-          if (keyNotedir === safeNewDir && keyNotename === safeNewName)
-            continue;
-          const newKeyParts = [];
-          if (safeNewDir)
-            newKeyParts.push(safeNewDir);
-          newKeyParts.push(safeNewName);
-          newKeyParts.push(filename);
-          const newKey = newKeyParts.join("/");
-          if (newKey !== oldKey) {
-            const oldUrl = buildPublicUrl(
-              this.settings.s3.customDomainName,
-              this.settings.s3.endpoint,
-              this.settings.s3.bucketName,
-              oldKey
-            );
-            mismatches.push({ file, oldKey, newKey, oldUrl });
           }
+          const newKey = this.getCanonicalKeyForNote(oldKey, file);
+          if (!newKey) {
+            skipped++;
+            continue;
+          }
+          if (newKey === oldKey)
+            continue;
+          const oldUrl = buildPublicUrl(
+            this.settings.s3.customDomainName,
+            this.settings.s3.endpoint,
+            this.settings.s3.bucketName,
+            oldKey
+          );
+          mismatches.push({ file, oldKey, newKey, oldUrl });
         }
       } catch {
       }
@@ -6430,7 +6388,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     }
     notice.setMessage(this.t("resyncFoundMismatch", { count: mismatches.length }));
     let fixed = 0;
-    let skipped = 0;
     let failed = 0;
     const byFile = /* @__PURE__ */ new Map();
     for (const entry of mismatches) {
@@ -6457,6 +6414,15 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
             entry.newKey
           );
           urlReplacements.set(entry.oldUrl, newUrl);
+          const oldLocalPath = this.getLocalMirrorPathForCloudKey(entry.oldKey);
+          const newLocalPath = this.getLocalMirrorPathForCloudKey(entry.newKey);
+          if (oldLocalPath && newLocalPath) {
+            urlReplacements.set(oldLocalPath, newLocalPath);
+            urlReplacements.set(
+              oldLocalPath.split("/").map(encodeURIComponent).join("/"),
+              newLocalPath.split("/").map(encodeURIComponent).join("/")
+            );
+          }
           fixed++;
         } catch (error) {
           console.error(`Resync: Failed to move S3 object ${entry.oldKey} -> ${entry.newKey}:`, error);

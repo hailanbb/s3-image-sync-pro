@@ -1,11 +1,14 @@
 {
   "name": "s3-image-sync-pro",
-  "version": "1.6.7",
+  "version": "1.6.8",
   "description": "Upload images to S3/R2 with note-path matching, WebP WASM compression, and auto-delete sync.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production"
+    "build": "node esbuild.config.mjs production",
+    "test": "node tests/path-sync.test.cjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts"
   },
   "keywords": [],
   "author": "hailanbb",
