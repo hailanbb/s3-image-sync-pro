@@ -28,3 +28,10 @@
 - Typed the bundled WebP WASM import as Uint8Array and removed unsafe access.
 - Removed the unnecessary ArrayBuffer assertion and completion console log.
 - Startup path checks now validate both the note directory and note-name segment.
+
+## 2026-08-12 (v1.6.7): path-sync ownership boundary
+
+- Added configurable S3 key prefixes excluded from note-path synchronization.
+- Defaulted the exclusion to `mpclipper` so shared-domain images managed by MpClipper Sync are not moved or reported as mismatches.
+- Kept excluded-prefix images available for cloud display, local-mirror download, and local/cloud link switching.
+- Fixed note-rename synchronization incorrectly parsing an already-extracted S3 key as a full URL, and preserved both cloud and local link modes during rewrites.
