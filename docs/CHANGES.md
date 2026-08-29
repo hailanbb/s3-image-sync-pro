@@ -45,3 +45,11 @@
 - Made the remote-image transfer toggle take effect immediately without reloading the plugin.
 - Restricted remote deletion to actual note deletion, preserved objects referenced by other notes, and stopped deleting mirrors when the setting is disabled.
 - Corrected settings help and README behavior descriptions, including the implemented date variables and canonical default template.
+
+## 2026-08-29 (v1.6.9): local-mirror orphan recovery
+
+- Made current-note scans recognize Wiki and Markdown image references that already point into the local mirror.
+- Uploads mirror files with their exact mirror-relative S3 key, without recompressing or appending a second hash.
+- Made local-to-cloud link switching upload first and rewrite only after success, preventing new 404 links.
+- Added debounced recovery for notes created by Obsidian, scripts, or other plugins while Cloud link mode is active.
+- Preserved local mirror files and disabled destructive rollback for exact-key mirror uploads.

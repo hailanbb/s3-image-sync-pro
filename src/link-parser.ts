@@ -1,4 +1,4 @@
-import { LocalRef } from "./types";
+import type { LocalRef, RemoteImageRef } from "./types";
 
 function splitFragment(path: string): { path: string; fragment: string } {
   const hashIndex = path.indexOf("#");
@@ -52,7 +52,7 @@ export function extractLocalRefs(text: string): LocalRef[] {
     const pipeIndex = inner.indexOf("|");
     const targetPart = pipeIndex >= 0 ? inner.slice(0, pipeIndex) : inner;
     const alias = pipeIndex >= 0 ? inner.slice(pipeIndex + 1) : "";
-    const parsed = splitFragment(targetPart.trim());
+    const parsed = splitFragment(decodeLinkPath(targetPart.trim()));
     refs.push({
       kind: raw.startsWith("!") ? "wiki-embed" : "wiki",
       raw,
@@ -104,8 +104,6 @@ export function isImageUrl(url: string): boolean {
   const ext = guessExtFromUrl(url);
   return IMAGE_EXTS.has(ext);
 }
-
-import { RemoteImageRef } from "./types";
 
 export function extractRemoteImageRefs(text: string): RemoteImageRef[] {
   const refs: RemoteImageRef[] = [];

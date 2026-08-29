@@ -212,6 +212,7 @@ export const I18N: Record<string, Record<string, string>> = {
     toggleLinkCancel: "Cancel",
     toggleLinkWorking: "Switching image links...",
     toggleLinkDone: "Switched {count} image link(s) to {mode}.",
+    toggleLinkDoneWithFailures: "Switched {count} image link(s) to {mode}; {failed} note(s) failed and were left unchanged.",
     linkModeLocal: "Local",
     linkModeCloud: "Cloud",
     migrationNoDomain: "Please configure a public access URL and local mirror root first.",
@@ -221,7 +222,7 @@ export const I18N: Record<string, Record<string, string>> = {
     localMirrorRoot: "Local mirror directory",
     localMirrorRootDesc: "Directory inside your vault to store local copies of uploaded images. Default: 98 cloudflareR2",
     linkModeLabel: "Default link mode",
-    linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL.",
+    linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL. In Cloud mode, mirror links created by Obsidian or other tools are uploaded and rewritten after the note settles.",
   },
   zh: {
     // Ribbon & Commands
@@ -435,6 +436,7 @@ export const I18N: Record<string, Record<string, string>> = {
     toggleLinkCancel: "取消",
     toggleLinkWorking: "正在切换图片链接...",
     toggleLinkDone: "已将 {count} 个图片链接切换为{mode}。",
+    toggleLinkDoneWithFailures: "已将 {count} 个图片链接切换为{mode}；{failed} 篇笔记处理失败并保持原样。",
     linkModeLocal: "本地",
     linkModeCloud: "云端",
     migrationNoDomain: "请先配置公开访问 URL 和本地镜像目录。",
@@ -444,7 +446,7 @@ export const I18N: Record<string, Record<string, string>> = {
     localMirrorRoot: "本地镜像目录",
     localMirrorRootDesc: "用于存储上传图片本地副本的 Vault 内目录。默认：98 cloudflareR2",
     linkModeLabel: "默认链接模式",
-    linkModeDesc: "控制新图片链接默认指向本地镜像还是云端 URL。",
+    linkModeDesc: "控制新图片链接默认指向本地镜像还是云端 URL。云端模式下，Obsidian 或其他工具新建的镜像图片链接会在笔记稳定后自动补传并改写。",
   },
 };
 

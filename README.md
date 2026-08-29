@@ -152,7 +152,7 @@ S3 Image Sync Pro 可以把 Obsidian 笔记中的图片上传到 Cloudflare R2�
 3. **不要删除 `data.json`**，它保存你的插件设置。
 4. 重新启动并确认版本号。
 
-当前版本为 **1.6.8**，最低支持 Obsidian **1.6.6**。历史兼容关系见 [`versions.json`](versions.json)。
+当前版本为 **1.6.9**，最低支持 Obsidian **1.6.6**。历史兼容关系见 [`versions.json`](versions.json)。
 
 ## Cloudflare R2 新手配置
 
@@ -264,7 +264,7 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 {notedir}/{notename}/{filename}-{hash-short}.{ext}
 ```
 
-当前 v1.6.8 支持以下变量：
+当前版本支持以下变量：
 
 | 变量 | 含义 |
 | --- | --- |
@@ -343,7 +343,7 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 
 开启“定期自动扫描全库”后，设置页会显示图片类型区域，可决定哪些扩展名参与扫描和定时处理，也可添加自定义扩展名。
 
-手动“扫描当前笔记图片”的范围比自动扫描更宽：它不强制附件根目录、自动候选类型和最小体积规则，但仍会跳过 Markdown 文件、镜像目录中的文件、封面引用和代码区域。
+手动“扫描当前笔记图片”的范围比自动扫描更宽：它不强制附件根目录、自动候选类型和最小体积规则。普通 Markdown 文件、封面引用和代码区域仍会跳过；镜像目录中的图片会作为“待补传镜像”处理，并按镜像相对路径原样上传，不会再次追加哈希或改变格式。
 
 > 定时扫描和“扫描全库图片但不替换”只处理“图片文件夹”设置中的目录，默认是 `90-笔记系统/92-附件`；v1.6.8 起可直接在设置页修改。手动扫描当前笔记不受该目录限制。
 
@@ -362,9 +362,9 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 
 | 功能 | 作用范围 | 改笔记 | 改云端 | 改本地镜像 | 重要说明 |
 | --- | --- | --- | --- | --- | --- |
-| 扫描当前笔记图片 | 当前 Markdown 笔记 | 是 | 是 | 是 | 本地候选先选择；外部图片会尝试转存。成功后原本地附件移入回收站。 |
+| 扫描当前笔记图片 | 当前 Markdown 笔记 | 是 | 是 | 是 | 支持普通附件、镜像图片和外部图片；镜像图片始终保留，普通原附件成功后移入回收站。 |
 | 扫描全库图片但不替换 | 全库 | 否 | 否 | 否 | 只读预览，显示本地和远程候选数量及部分样例。 |
-| 切换图片链接（本地 ↔ 云端） | 当前笔记或全库 | 是 | 否 | 否 | 切换到本地时，只有已存在镜像的图片才改写。 |
+| 切换图片链接（本地 ↔ 云端） | 当前笔记或全库 | 是 | 视目标模式而定 | 否 | 切到云端前会先补传缺失的镜像对象；切到本地时只有已存在镜像的图片才改写。 |
 | 一键下载云端图片至本地镜像 | 全库受管笔记 | 否 | 否 | 是 | 已存在文件跳过，404 等错误计入失败。 |
 | 重新同步全部 S3 图片路径 | 全库受管笔记 | 是 | 是 | 是 | 复制到规范新键并保留旧对象；跳过忽略目录和排除前缀。 |
 
@@ -373,9 +373,12 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 - 解析 Wiki 嵌入、Wiki 链接、Markdown 图片和普通 Markdown 文件链接。
 - 避开代码块和行内代码。
 - 本地候选会显示预览窗口，可取消不想上传的图片。
+- 本地镜像目录中的 Wiki 或 Markdown 图片也会被识别；云端键直接取镜像目录后的相对路径，文件名不会重复追加哈希。
 - 外部 `http(s)` 图片如果看起来是图片，会下载并转存到自己的存储。
 - 上传成功后先写入镜像，再改写链接；镜像失败时会回滚刚上传的云端对象。
 - 笔记成功改写后，原始本地附件会移入 Obsidian 回收站。
+
+镜像目录中的文件本身就是保留副本，因此即使链接改为云端也不会被移入回收站。
 
 如果同一原始附件还被其他笔记引用，移入回收站会使那些引用失效；确认上传前请先检查共享引用。
 
@@ -388,9 +391,9 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 可选择“仅当前笔记”或“全库所有笔记”。
 
 - 云端 → 本地：按对象键寻找镜像；找不到时保留原云端 URL，不生成失效链接。
-- 本地 → 云端：把镜像目录后的相对路径作为对象键，拼接公开访问 URL。
+- 本地 → 云端：支持 `![[镜像路径]]` 与 `![说明](镜像路径)`；先把镜像目录后的相对路径作为对象键原样上传，上传成功后才写入公开 URL。
 - 完成后，“默认链接模式”也会更新为目标模式。
-- 只处理标准 Markdown 图片语法 `![说明](地址)` 中属于本插件域名或镜像目录的链接。
+- 上传或笔记改写失败时保留原本地链接和镜像文件，不生成指向 404 对象的云端链接。
 
 准备切到本地前，建议先运行“一键下载云端图片至本地镜像”。
 
@@ -433,6 +436,8 @@ https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 4. 在笔记中粘贴截图，等待占位文字变成正式图片链接。
 
 每次成功上传都会同时产生云端对象和本地镜像。
+
+如果图片由 Obsidian、脚本或其他插件直接写入本地镜像，且“默认链接模式”为“云端”，S3 Image Sync Pro 会在笔记创建或修改并稳定约 5 秒后补传这些镜像图片，再把 Wiki/Markdown 本地图片链接切换为云端链接。忽略路径仍然不会处理。
 
 ### 处理已有笔记中的本地图片
 
@@ -586,13 +591,13 @@ npm run build
 npm run dev
 ```
 
-`npm test` 覆盖规范路径、Vault 根目录键、日期模板和共享引用删除保护。生产构建会把 WebP 所需 WASM 资源打包进 `main.js`，Release 安装不需要额外下载 `.wasm` 文件。
+`npm test` 覆盖规范路径、Vault 根目录键、日期模板、镜像相对键、Wiki/Markdown 镜像引用和共享引用删除保护。生产构建会把 WebP 所需 WASM 资源打包进 `main.js`，Release 安装不需要额外下载 `.wasm` 文件。
 
 GitHub Actions 在推送版本 Tag 后执行生产构建，并把 `main.js`、`manifest.json`、`styles.css` 附加到 Release。版本号需要在 `package.json`、`package-lock.json`、`manifest.json` 和 `versions.json` 中保持一致。
 
 ## 版本与许可证
 
-- 当前版本：**1.6.8**
+- 当前版本：**1.6.9**
 - 最低 Obsidian 版本：**1.6.6**
 - 许可证：[MIT](LICENSE)
 - 重大变更：[docs/CHANGES.md](docs/CHANGES.md)
@@ -608,6 +613,6 @@ Its core invariant is:
 S3 object key == local mirror path relative to the configured mirror root
 ```
 
-Every successful upload writes both the cloud object and the exact local mirror, even when Cloud link mode is selected. The plugin can switch Markdown image links between cloud and local forms, download cloud-linked images into the mirror, transfer external images, and copy objects to canonical note-based paths after notes are moved or renamed.
+Every successful upload writes both the cloud object and the exact local mirror, even when Cloud link mode is selected. The plugin can recover local mirror references in both Obsidian Wiki-embed and Markdown-image forms, upload them to the matching cloud key, switch managed links between cloud and local forms, download cloud-linked images into the mirror, transfer external images, and copy objects to canonical note-based paths after notes are moved or renamed.
 
 Follow the Chinese guide above for installation, configuration, safety notes, and troubleshooting. Download `main.js`, `manifest.json`, and `styles.css` from [the latest release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest), place them in `<vault>/.obsidian/plugins/s-three-image-sync-pro/`, then enable the plugin in Obsidian.

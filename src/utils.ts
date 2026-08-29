@@ -1,9 +1,18 @@
+import type { LocalRef, ReplacementType } from "./types";
+
 export function basename(path: string): string {
   return String(path || "").split("/").pop() || path;
 }
 
 export function trimSlashes(path: string): string {
   return String(path || "").replace(/^\/+|\/+$/g, "");
+}
+
+export function cloudKeyFromLocalMirrorPath(filePath: string, mirrorRoot: string): string | null {
+  const normalizedPath = trimSlashes(String(filePath || "").replace(/\\/g, "/"));
+  const normalizedRoot = trimSlashes(String(mirrorRoot || "").replace(/\\/g, "/"));
+  if (!normalizedRoot || !normalizedPath.startsWith(`${normalizedRoot}/`)) return null;
+  return trimSlashes(normalizedPath.slice(normalizedRoot.length + 1)) || null;
 }
 
 export function safeFilename(name: string): string {
@@ -83,6 +92,22 @@ export function replaceAllLiteral(text: string, search: string, replacement: str
 
 export function escapeMarkdownLabel(label: string): string {
   return String(label || "attachment").replace(/\]/g, "\\]");
+}
+
+export function buildLinkReplacement(
+  ref: LocalRef,
+  replacement: ReplacementType,
+  targetUrl: string
+): string {
+  const url = ref.fragment
+    ? `${targetUrl}#${encodeURIComponent(ref.fragment)}`
+    : targetUrl;
+  const label = escapeMarkdownLabel(ref.label || basename(ref.target));
+
+  if (replacement === "image") return `![${label}](${url})`;
+  if (replacement === "video") return `<video src="${url}" controls></video>`;
+  if (replacement === "audio") return `<audio src="${url}" controls></audio>`;
+  return `[${label}](${url})`;
 }
 
 export function formatBytes(bytes: number): string {

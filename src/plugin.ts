@@ -18,6 +18,8 @@ import { sha256Hex } from "./crypto";
 import {
   buildPublicUrl,
   buildCanonicalNoteKey,
+  buildLinkReplacement,
+  cloudKeyFromLocalMirrorPath,
   contentTypeForExt,
   escapeMarkdownLabel,
   isKeyReferencedElsewhere,
@@ -180,6 +182,10 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   onunload(): void {
     if (this.autoScanTimer) window.clearInterval(this.autoScanTimer);
+    for (const timer of this.remoteTransferDebounceTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.remoteTransferDebounceTimers.clear();
   }
 
   async loadSettings(): Promise<void> {
@@ -232,11 +238,6 @@ export default class S3ImageSyncPlugin extends Plugin {
     return mirrorRoot && key ? `${mirrorRoot}/${key}` : null;
   }
 
-  private isLocalMirrorPath(path: string): boolean {
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    return mirrorRoot !== "" && (path === mirrorRoot || path.startsWith(`${mirrorRoot}/`));
-  }
-
   configureAutoScan(): void {
     if (this.autoScanTimer) window.clearInterval(this.autoScanTimer);
     this.autoScanTimer = null;
@@ -272,6 +273,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       enforceAttachmentRoot: false,
       enforceSizeRule: false,
       skipExtensionFilter: true,
+      includeLocalMirror: true,
     });
     const remoteCandidates = await this.findRemoteCandidatesInNote(activeFile);
     if (candidates.length === 0 && remoteCandidates.length === 0) {
@@ -316,6 +318,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           requireAutoCandidate: true,
           enforceAttachmentRoot: true,
           enforceSizeRule: true,
+          includeLocalMirror: this.settings.linkMode === "cloud",
         });
         localCount += candidates.length;
         for (const candidate of candidates.slice(0, 2)) {
@@ -351,6 +354,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           requireAutoCandidate: true,
           enforceAttachmentRoot: true,
           enforceSizeRule: true,
+          includeLocalMirror: this.settings.linkMode === "cloud",
         });
         const quietCandidates = candidates.filter((c) => {
           if (!this.isQuiet(c.file)) return false;
@@ -382,8 +386,12 @@ export default class S3ImageSyncPlugin extends Plugin {
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
       if (!targetFile || !(targetFile instanceof TFile)) continue;
-      if (this.isLocalMirrorPath(targetFile.path)) continue;
-      if (options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
+      const mirrorCloudKey = cloudKeyFromLocalMirrorPath(
+        targetFile.path,
+        this.settings.localMirrorRoot || "98 cloudflareR2"
+      );
+      if (mirrorCloudKey && !options.includeLocalMirror) continue;
+      if (!mirrorCloudKey && options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
         continue;
       if (this.isCoverReference(text, ref)) continue;
 
@@ -395,6 +403,12 @@ export default class S3ImageSyncPlugin extends Plugin {
       if (options.enforceSizeRule !== false && !this.meetsSizeRule(targetFile, ext)) continue;
 
       const replacement = getReplacementForExt(ext, this.settings);
+      if (
+        mirrorCloudKey &&
+        replacement === "image" &&
+        ref.kind !== "wiki-embed" &&
+        ref.kind !== "markdown-embed"
+      ) continue;
       const key = `${targetFile.path}::${replacement}`;
       const existing = byKey.get(key);
       if (existing) {
@@ -408,6 +422,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           refs: [ref],
           referenceCount: 1,
           sizeBytes: targetFile.stat.size,
+          mirrorCloudKey: mirrorCloudKey || undefined,
         });
       }
     }
@@ -458,7 +473,8 @@ export default class S3ImageSyncPlugin extends Plugin {
   async replaceCandidates(
     noteFile: TFile,
     candidates: Candidate[],
-    progress: ((state: ProgressState) => void) | null
+    progress: ((state: ProgressState) => void) | null,
+    targetMode: "local" | "cloud" = this.settings.linkMode
   ): Promise<ReplaceResult> {
     this.ensureS3Settings();
     let noteChanged = false;
@@ -481,7 +497,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           });
           upload = await this.uploadCandidate(candidate, noteFile);
           uploaded.set(candidate.file.path, upload);
-          uploadedKeys.push(upload.key);
+          if (upload.deleteOnRollback !== false) uploadedKeys.push(upload.key);
           completedUploads += 1;
           progress?.({
             phase: "uploaded",
@@ -491,7 +507,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           });
         }
         for (const ref of candidate.refs) {
-          const targetUrl = (this.settings.linkMode === "local" && upload.localPath) 
+          const targetUrl = (targetMode === "local" && upload.localPath)
             ? upload.localPath.split("/").map(encodeURIComponent).join("/") 
             : upload.publicUrl;
           replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl));
@@ -688,24 +704,37 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   async uploadCandidate(candidate: Candidate, noteFile?: TFile): Promise<UploadResult> {
+    if (candidate.mirrorCloudKey) {
+      const binary = await this.app.vault.readBinary(candidate.file);
+      const body = new Uint8Array(binary);
+      const hash = await sha256Hex(body);
+      const key = trimSlashes(candidate.mirrorCloudKey);
+      await putS3Object(
+        this.settings.s3,
+        key,
+        body,
+        contentTypeForExt(candidate.file.extension.toLowerCase()),
+        (status, text) => this.t("uploadFailed", { status, text }),
+        hash
+      );
+      return {
+        key,
+        publicUrl: buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          key
+        ),
+        localPath: candidate.file.path,
+        deleteOnRollback: false,
+      };
+    }
     const binary = await this.app.vault.readBinary(candidate.file);
     return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
 
   buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string): string {
-    const encodedBase = publicUrl;
-    const url = ref.fragment
-      ? `${encodedBase}#${encodeURIComponent(ref.fragment)}`
-      : encodedBase;
-    const label = ref.label || candidate.file.basename;
-
-    if (candidate.replacement === "image")
-      return `![${escapeMarkdownLabel(label)}](${url})`;
-    if (candidate.replacement === "video")
-      return `<video src="${url}" controls></video>`;
-    if (candidate.replacement === "audio")
-      return `<audio src="${url}" controls></audio>`;
-    return `[${escapeMarkdownLabel(label)}](${url})`;
+    return buildLinkReplacement(ref, candidate.replacement, publicUrl);
   }
 
   buildLocalFileRecords(
@@ -808,26 +837,17 @@ export default class S3ImageSyncPlugin extends Plugin {
     if (!domainPrefix) return keys;
 
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    
-    // find all ![...](url)
-    const regex = /!\[[^\]]*\]\(([^)]+)\)/g;
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const url = match[1];
-      if (url.startsWith(domainPrefix)) {
-        keys.push(this.remoteUrlToS3Key(url));
-      } else if (mirrorRoot) {
-        // The URL in note text may be URL-encoded (e.g., "98%20cloudflareR2" vs "98 cloudflareR2")
-        // Decode first to compare against the raw mirrorRoot
-        const decodedUrl = decodeURIComponent(url);
-        if (decodedUrl.startsWith(mirrorRoot)) {
-          try {
-            const relativePath = decodedUrl.substring(mirrorRoot.length + 1);
-            keys.push(relativePath);
-          } catch {
-            // Ignore decode errors
-          }
-        }
+
+    for (const ref of extractRemoteImageRefs(text)) {
+      if (ref.url.startsWith(`${domainPrefix}/`)) {
+        keys.push(this.remoteUrlToS3Key(ref.url));
+      }
+    }
+
+    if (mirrorRoot) {
+      for (const ref of extractLocalRefs(text)) {
+        const key = cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot);
+        if (key) keys.push(key);
       }
     }
     return [...new Set(keys)];
@@ -1171,34 +1191,32 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   private remoteTransferDebounceTimers = new Map<string, number>();
 
+  private scheduleBackgroundImageSync(file: TFile): void {
+    if (!this.settings.enabled || this.isIgnoredNote(file)) return;
+    if (!this.settings.autoTransferRemoteImages && this.settings.linkMode !== "cloud") return;
+
+    const existing = this.remoteTransferDebounceTimers.get(file.path);
+    if (existing) window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      this.remoteTransferDebounceTimers.delete(file.path);
+      void this.autoTransferRemoteForFile(file);
+    }, 5000);
+    this.remoteTransferDebounceTimers.set(file.path, timer);
+  }
+
   configureAutoRemoteTransfer(): void {
-    // Listen for note creation (e.g. Web Clipper)
+    // Listen for notes created by Obsidian, Web Clipper, scripts, or other plugins.
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
-        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled) return;
-        // Debounce: wait 5 seconds for the file to settle
-        const existing = this.remoteTransferDebounceTimers.get(file.path);
-        if (existing) window.clearTimeout(existing);
-        const timer = window.setTimeout(() => {
-          this.remoteTransferDebounceTimers.delete(file.path);
-          void this.autoTransferRemoteForFile(file);
-        }, 5000);
-        this.remoteTransferDebounceTimers.set(file.path, timer);
+        this.scheduleBackgroundImageSync(file);
       })
     );
-    // Also listen for modify (in case Web Clipper modifies an existing note)
+    // Also listen for a note that receives links after its initial creation.
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
-        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled) return;
-        const existing = this.remoteTransferDebounceTimers.get(file.path);
-        if (existing) window.clearTimeout(existing);
-        const timer = window.setTimeout(() => {
-          this.remoteTransferDebounceTimers.delete(file.path);
-          void this.autoTransferRemoteForFile(file);
-        }, 5000);
-        this.remoteTransferDebounceTimers.set(file.path, timer);
+        this.scheduleBackgroundImageSync(file);
       })
     );
   }
@@ -1208,14 +1226,34 @@ export default class S3ImageSyncPlugin extends Plugin {
       this.ensureS3Settings();
     } catch { return; }
     try {
-      const candidates = await this.findRemoteCandidatesInNote(file);
-      if (candidates.length === 0) return;
-      const result = await this.transferRemoteImagesInNote(file, candidates);
-      if (result.replaced > 0) {
-        new Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+      if (this.settings.linkMode === "cloud") {
+        const mirrorCandidates = (await this.findCandidatesInNote(file, {
+          requireAutoCandidate: false,
+          enforceAttachmentRoot: false,
+          enforceSizeRule: false,
+          skipExtensionFilter: true,
+          includeLocalMirror: true,
+        })).filter((candidate) => candidate.mirrorCloudKey && candidate.replacement === "image");
+        if (mirrorCandidates.length > 0) {
+          const result = await this.replaceCandidates(file, mirrorCandidates, null, "cloud");
+          if (result.replaced > 0) {
+            new Notice(this.t("autoScanReplaced", { count: result.replaced }));
+          }
+        }
+      }
+
+      if (this.settings.autoTransferRemoteImages) {
+        const candidates = await this.findRemoteCandidatesInNote(file);
+        if (candidates.length > 0) {
+          const result = await this.transferRemoteImagesInNote(file, candidates);
+          if (result.replaced > 0) {
+            new Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+          }
+        }
       }
     } catch (error) {
-      console.error(`Auto remote transfer failed for ${file.path}:`, error);
+      console.error(`Automatic image sync failed for ${file.path}:`, error);
+      new Notice(this.t("autoScanFailed", { error: error instanceof Error ? error.message : String(error) }));
     }
   }
 
@@ -1233,6 +1271,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     }
 
     let totalChanged = 0;
+    let failed = 0;
     const notice = new Notice(this.t("toggleLinkWorking"), 0);
     for (const file of files) {
       try {
@@ -1240,19 +1279,40 @@ export default class S3ImageSyncPlugin extends Plugin {
         totalChanged += changed;
       } catch (error) {
         console.error(`Toggle links failed for ${file.path}:`, error);
+        failed++;
       }
     }
     notice.hide();
 
     this.settings.linkMode = targetMode;
     await this.saveSettings();
-    new Notice(this.t("toggleLinkDone", { count: totalChanged, mode: targetMode === "local" ? this.t("linkModeLocal") : this.t("linkModeCloud") }));
+    const mode = targetMode === "local" ? this.t("linkModeLocal") : this.t("linkModeCloud");
+    new Notice(this.t(failed > 0 ? "toggleLinkDoneWithFailures" : "toggleLinkDone", {
+      count: totalChanged,
+      failed,
+      mode,
+    }));
   }
 
   private async toggleLinksInNote(noteFile: TFile, targetMode: "local" | "cloud"): Promise<number> {
-    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (!ownDomain || !mirrorRoot) return 0;
+    if (!mirrorRoot) return 0;
+
+    if (targetMode === "cloud") {
+      const mirrorCandidates = (await this.findCandidatesInNote(noteFile, {
+        requireAutoCandidate: false,
+        enforceAttachmentRoot: false,
+        enforceSizeRule: false,
+        skipExtensionFilter: true,
+        includeLocalMirror: true,
+      })).filter((candidate) => candidate.mirrorCloudKey && candidate.replacement === "image");
+      if (mirrorCandidates.length === 0) return 0;
+      const result = await this.replaceCandidates(noteFile, mirrorCandidates, null, "cloud");
+      return result.replaced;
+    }
+
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    if (!ownDomain) return 0;
 
     // Normalize domain for matching
     const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
@@ -1261,38 +1321,21 @@ export default class S3ImageSyncPlugin extends Plugin {
     await this.app.vault.process(noteFile, (content) => {
       let next = content;
 
-      if (targetMode === "local") {
-        // Cloud �?Local: find all URLs from our domain and replace with local paths
-        const cloudRegex = new RegExp(
-          `(!\\[[^\\]]*\\])\\(${this.escapeRegex(domainPrefix)}/([^)]+)\\)`,
-          "g"
-        );
-        next = next.replace(cloudRegex, (_match, labelPart: string, cloudKeyEncoded: string) => {
-          const cloudKey = decodeURIComponent(cloudKeyEncoded);
-          const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
-          if (localFile) {
-            changed++;
-            const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
-            return `${labelPart}(${encodedLocal})`;
-          }
-          return _match; // No local file found, keep cloud URL
-        });
-      } else {
-        // Local → Cloud: find all paths starting with mirrorRoot and replace with cloud URLs
-        // mirrorRoot may contain spaces; note text may have them URL-encoded as %20
-        const mirrorPattern = this.escapeRegex(mirrorRoot).replace(/ /g, '(?: |%20)');
-        const localRegex = new RegExp(
-          `(!\\[[^\\]]*\\])\\(${mirrorPattern}/([^)]+)\\)`,
-          "g"
-        );
-        next = next.replace(localRegex, (_match, labelPart: string, relativePathEncoded: string) => {
-          const relativePath = decodeURIComponent(relativePathEncoded);
-          const cloudKey = relativePath;
-          const cloudUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, cloudKey);
+      // Cloud -> Local: only rewrite when the exact mirror object exists.
+      const cloudRegex = new RegExp(
+        `(!\\[[^\\]]*\\])\\(${this.escapeRegex(domainPrefix)}/([^)]+)\\)`,
+        "g"
+      );
+      next = next.replace(cloudRegex, (_match, labelPart: string, cloudKeyEncoded: string) => {
+        const cloudKey = decodeURIComponent(cloudKeyEncoded);
+        const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
+        if (localFile) {
           changed++;
-          return `${labelPart}(${cloudUrl})`;
-        });
-      }
+          const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
+          return `${labelPart}(${encodedLocal})`;
+        }
+        return _match;
+      });
 
       return next;
     });

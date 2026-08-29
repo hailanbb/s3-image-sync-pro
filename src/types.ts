@@ -74,6 +74,8 @@ export interface Candidate {
   refs: LocalRef[];
   referenceCount: number;
   sizeBytes: number;
+  /** Exact S3 key when the source file already lives inside the local mirror. */
+  mirrorCloudKey?: string;
 }
 
 
@@ -98,6 +100,8 @@ export interface UploadResult {
   key: string;
   publicUrl: string;
   localPath?: string;
+  /** False when a failed note rewrite must not delete this object. */
+  deleteOnRollback?: boolean;
 }
 
 export interface LocalFileRecord {
@@ -116,6 +120,7 @@ export interface ScanOptions {
   enforceAttachmentRoot: boolean;
   enforceSizeRule: boolean;
   skipExtensionFilter?: boolean;
+  includeLocalMirror?: boolean;
 }
 
 export interface FileCategory {

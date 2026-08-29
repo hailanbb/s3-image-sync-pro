@@ -3245,7 +3245,7 @@ function extractLocalRefs(text) {
     const pipeIndex = inner.indexOf("|");
     const targetPart = pipeIndex >= 0 ? inner.slice(0, pipeIndex) : inner;
     const alias = pipeIndex >= 0 ? inner.slice(pipeIndex + 1) : "";
-    const parsed = splitFragment(targetPart.trim());
+    const parsed = splitFragment(decodeLinkPath(targetPart.trim()));
     refs.push({
       kind: raw.startsWith("!") ? "wiki-embed" : "wiki",
       raw,
@@ -3354,8 +3354,18 @@ async function getSignatureKey(secret, dateStamp, region, service) {
 }
 
 // src/utils.ts
+function basename2(path) {
+  return String(path || "").split("/").pop() || path;
+}
 function trimSlashes(path) {
   return String(path || "").replace(/^\/+|\/+$/g, "");
+}
+function cloudKeyFromLocalMirrorPath(filePath, mirrorRoot) {
+  const normalizedPath = trimSlashes(String(filePath || "").replace(/\\/g, "/"));
+  const normalizedRoot = trimSlashes(String(mirrorRoot || "").replace(/\\/g, "/"));
+  if (!normalizedRoot || !normalizedPath.startsWith(`${normalizedRoot}/`))
+    return null;
+  return trimSlashes(normalizedPath.slice(normalizedRoot.length + 1)) || null;
 }
 function safeFilename(name) {
   return String(name || "attachment").replace(/[\\/:*?"<>|#%]+/g, "-");
@@ -3406,6 +3416,17 @@ function replaceAllLiteral(text, search, replacement) {
 }
 function escapeMarkdownLabel(label) {
   return String(label || "attachment").replace(/\]/g, "\\]");
+}
+function buildLinkReplacement(ref, replacement, targetUrl) {
+  const url = ref.fragment ? `${targetUrl}#${encodeURIComponent(ref.fragment)}` : targetUrl;
+  const label = escapeMarkdownLabel(ref.label || basename2(ref.target));
+  if (replacement === "image")
+    return `![${label}](${url})`;
+  if (replacement === "video")
+    return `<video src="${url}" controls></video>`;
+  if (replacement === "audio")
+    return `<audio src="${url}" controls></audio>`;
+  return `[${label}](${url})`;
 }
 function formatBytes(bytes) {
   if (bytes >= 1024 * 1024 * 1024)
@@ -3905,6 +3926,7 @@ var I18N = {
     toggleLinkCancel: "Cancel",
     toggleLinkWorking: "Switching image links...",
     toggleLinkDone: "Switched {count} image link(s) to {mode}.",
+    toggleLinkDoneWithFailures: "Switched {count} image link(s) to {mode}; {failed} note(s) failed and were left unchanged.",
     linkModeLocal: "Local",
     linkModeCloud: "Cloud",
     migrationNoDomain: "Please configure a public access URL and local mirror root first.",
@@ -3914,7 +3936,7 @@ var I18N = {
     localMirrorRoot: "Local mirror directory",
     localMirrorRootDesc: "Directory inside your vault to store local copies of uploaded images. Default: 98 cloudflareR2",
     linkModeLabel: "Default link mode",
-    linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL."
+    linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL. In Cloud mode, mirror links created by Obsidian or other tools are uploaded and rewritten after the note settles."
   },
   zh: {
     // Ribbon & Commands
@@ -4102,6 +4124,7 @@ var I18N = {
     toggleLinkCancel: "\u53D6\u6D88",
     toggleLinkWorking: "\u6B63\u5728\u5207\u6362\u56FE\u7247\u94FE\u63A5...",
     toggleLinkDone: "\u5DF2\u5C06 {count} \u4E2A\u56FE\u7247\u94FE\u63A5\u5207\u6362\u4E3A{mode}\u3002",
+    toggleLinkDoneWithFailures: "\u5DF2\u5C06 {count} \u4E2A\u56FE\u7247\u94FE\u63A5\u5207\u6362\u4E3A{mode}\uFF1B{failed} \u7BC7\u7B14\u8BB0\u5904\u7406\u5931\u8D25\u5E76\u4FDD\u6301\u539F\u6837\u3002",
     linkModeLocal: "\u672C\u5730",
     linkModeCloud: "\u4E91\u7AEF",
     migrationNoDomain: "\u8BF7\u5148\u914D\u7F6E\u516C\u5F00\u8BBF\u95EE URL \u548C\u672C\u5730\u955C\u50CF\u76EE\u5F55\u3002",
@@ -4111,7 +4134,7 @@ var I18N = {
     localMirrorRoot: "\u672C\u5730\u955C\u50CF\u76EE\u5F55",
     localMirrorRootDesc: "\u7528\u4E8E\u5B58\u50A8\u4E0A\u4F20\u56FE\u7247\u672C\u5730\u526F\u672C\u7684 Vault \u5185\u76EE\u5F55\u3002\u9ED8\u8BA4\uFF1A98 cloudflareR2",
     linkModeLabel: "\u9ED8\u8BA4\u94FE\u63A5\u6A21\u5F0F",
-    linkModeDesc: "\u63A7\u5236\u65B0\u56FE\u7247\u94FE\u63A5\u9ED8\u8BA4\u6307\u5411\u672C\u5730\u955C\u50CF\u8FD8\u662F\u4E91\u7AEF URL\u3002"
+    linkModeDesc: "\u63A7\u5236\u65B0\u56FE\u7247\u94FE\u63A5\u9ED8\u8BA4\u6307\u5411\u672C\u5730\u955C\u50CF\u8FD8\u662F\u4E91\u7AEF URL\u3002\u4E91\u7AEF\u6A21\u5F0F\u4E0B\uFF0CObsidian \u6216\u5176\u4ED6\u5DE5\u5177\u65B0\u5EFA\u7684\u955C\u50CF\u56FE\u7247\u94FE\u63A5\u4F1A\u5728\u7B14\u8BB0\u7A33\u5B9A\u540E\u81EA\u52A8\u8865\u4F20\u5E76\u6539\u5199\u3002"
   }
 };
 function detectLocaleFromApp(getLanguage2) {
@@ -5113,6 +5136,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
   onunload() {
     if (this.autoScanTimer)
       window.clearInterval(this.autoScanTimer);
+    for (const timer of this.remoteTransferDebounceTimers.values()) {
+      window.clearTimeout(timer);
+    }
+    this.remoteTransferDebounceTimers.clear();
   }
   async loadSettings() {
     const loaded = await this.loadData();
@@ -5156,10 +5183,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     const key = trimSlashes(cloudKey);
     return mirrorRoot && key ? `${mirrorRoot}/${key}` : null;
   }
-  isLocalMirrorPath(path) {
-    const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    return mirrorRoot !== "" && (path === mirrorRoot || path.startsWith(`${mirrorRoot}/`));
-  }
   configureAutoScan() {
     if (this.autoScanTimer)
       window.clearInterval(this.autoScanTimer);
@@ -5196,7 +5219,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       requireAutoCandidate: false,
       enforceAttachmentRoot: false,
       enforceSizeRule: false,
-      skipExtensionFilter: true
+      skipExtensionFilter: true,
+      includeLocalMirror: true
     });
     const remoteCandidates = await this.findRemoteCandidatesInNote(activeFile);
     if (candidates.length === 0 && remoteCandidates.length === 0) {
@@ -5237,7 +5261,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const candidates = await this.findCandidatesInNote(file, {
           requireAutoCandidate: true,
           enforceAttachmentRoot: true,
-          enforceSizeRule: true
+          enforceSizeRule: true,
+          includeLocalMirror: this.settings.linkMode === "cloud"
         });
         localCount += candidates.length;
         for (const candidate of candidates.slice(0, 2)) {
@@ -5275,7 +5300,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         const candidates = await this.findCandidatesInNote(file, {
           requireAutoCandidate: true,
           enforceAttachmentRoot: true,
-          enforceSizeRule: true
+          enforceSizeRule: true,
+          includeLocalMirror: this.settings.linkMode === "cloud"
         });
         const quietCandidates = candidates.filter((c) => {
           if (!this.isQuiet(c.file))
@@ -5311,9 +5337,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
       if (!targetFile || !(targetFile instanceof import_obsidian6.TFile))
         continue;
-      if (this.isLocalMirrorPath(targetFile.path))
+      const mirrorCloudKey = cloudKeyFromLocalMirrorPath(
+        targetFile.path,
+        this.settings.localMirrorRoot || "98 cloudflareR2"
+      );
+      if (mirrorCloudKey && !options.includeLocalMirror)
         continue;
-      if (options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
+      if (!mirrorCloudKey && options.enforceAttachmentRoot !== false && !this.isUnderAttachmentRoot(targetFile))
         continue;
       if (this.isCoverReference(text, ref))
         continue;
@@ -5327,6 +5357,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       if (options.enforceSizeRule !== false && !this.meetsSizeRule(targetFile, ext))
         continue;
       const replacement = getReplacementForExt(ext, this.settings);
+      if (mirrorCloudKey && replacement === "image" && ref.kind !== "wiki-embed" && ref.kind !== "markdown-embed")
+        continue;
       const key = `${targetFile.path}::${replacement}`;
       const existing = byKey.get(key);
       if (existing) {
@@ -5339,7 +5371,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           replacement,
           refs: [ref],
           referenceCount: 1,
-          sizeBytes: targetFile.stat.size
+          sizeBytes: targetFile.stat.size,
+          mirrorCloudKey: mirrorCloudKey || void 0
         });
       }
     }
@@ -5386,7 +5419,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     const minSize = Math.max(0, minMiB) * 1024 * 1024;
     return file.stat.size >= minSize;
   }
-  async replaceCandidates(noteFile, candidates, progress) {
+  async replaceCandidates(noteFile, candidates, progress, targetMode = this.settings.linkMode) {
     this.ensureS3Settings();
     let noteChanged = false;
     let replaced = 0;
@@ -5407,7 +5440,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           });
           upload = await this.uploadCandidate(candidate, noteFile);
           uploaded.set(candidate.file.path, upload);
-          uploadedKeys.push(upload.key);
+          if (upload.deleteOnRollback !== false)
+            uploadedKeys.push(upload.key);
           completedUploads += 1;
           progress?.({
             phase: "uploaded",
@@ -5417,7 +5451,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
           });
         }
         for (const ref of candidate.refs) {
-          const targetUrl = this.settings.linkMode === "local" && upload.localPath ? upload.localPath.split("/").map(encodeURIComponent).join("/") : upload.publicUrl;
+          const targetUrl = targetMode === "local" && upload.localPath ? upload.localPath.split("/").map(encodeURIComponent).join("/") : upload.publicUrl;
           replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl));
         }
       }
@@ -5598,20 +5632,36 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     return { key, publicUrl, localPath };
   }
   async uploadCandidate(candidate, noteFile) {
+    if (candidate.mirrorCloudKey) {
+      const binary2 = await this.app.vault.readBinary(candidate.file);
+      const body = new Uint8Array(binary2);
+      const hash = await sha256Hex(body);
+      const key = trimSlashes(candidate.mirrorCloudKey);
+      await putS3Object(
+        this.settings.s3,
+        key,
+        body,
+        contentTypeForExt(candidate.file.extension.toLowerCase()),
+        (status, text) => this.t("uploadFailed", { status, text }),
+        hash
+      );
+      return {
+        key,
+        publicUrl: buildPublicUrl(
+          this.settings.s3.customDomainName,
+          this.settings.s3.endpoint,
+          this.settings.s3.bucketName,
+          key
+        ),
+        localPath: candidate.file.path,
+        deleteOnRollback: false
+      };
+    }
     const binary = await this.app.vault.readBinary(candidate.file);
     return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
   buildReplacement(ref, candidate, publicUrl) {
-    const encodedBase = publicUrl;
-    const url = ref.fragment ? `${encodedBase}#${encodeURIComponent(ref.fragment)}` : encodedBase;
-    const label = ref.label || candidate.file.basename;
-    if (candidate.replacement === "image")
-      return `![${escapeMarkdownLabel(label)}](${url})`;
-    if (candidate.replacement === "video")
-      return `<video src="${url}" controls></video>`;
-    if (candidate.replacement === "audio")
-      return `<audio src="${url}" controls></audio>`;
-    return `[${escapeMarkdownLabel(label)}](${url})`;
+    return buildLinkReplacement(ref, candidate.replacement, publicUrl);
   }
   buildLocalFileRecords(candidates, uploaded) {
     const byPath = /* @__PURE__ */ new Map();
@@ -5703,21 +5753,16 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     if (!domainPrefix)
       return keys;
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    const regex = /!\[[^\]]*\]\(([^)]+)\)/g;
-    let match;
-    while ((match = regex.exec(text)) !== null) {
-      const url = match[1];
-      if (url.startsWith(domainPrefix)) {
-        keys.push(this.remoteUrlToS3Key(url));
-      } else if (mirrorRoot) {
-        const decodedUrl = decodeURIComponent(url);
-        if (decodedUrl.startsWith(mirrorRoot)) {
-          try {
-            const relativePath = decodedUrl.substring(mirrorRoot.length + 1);
-            keys.push(relativePath);
-          } catch {
-          }
-        }
+    for (const ref of extractRemoteImageRefs(text)) {
+      if (ref.url.startsWith(`${domainPrefix}/`)) {
+        keys.push(this.remoteUrlToS3Key(ref.url));
+      }
+    }
+    if (mirrorRoot) {
+      for (const ref of extractLocalRefs(text)) {
+        const key = cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot);
+        if (key)
+          keys.push(key);
       }
     }
     return [...new Set(keys)];
@@ -6019,37 +6064,33 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
     });
     return { replaced };
   }
+  scheduleBackgroundImageSync(file) {
+    if (!this.settings.enabled || this.isIgnoredNote(file))
+      return;
+    if (!this.settings.autoTransferRemoteImages && this.settings.linkMode !== "cloud")
+      return;
+    const existing = this.remoteTransferDebounceTimers.get(file.path);
+    if (existing)
+      window.clearTimeout(existing);
+    const timer = window.setTimeout(() => {
+      this.remoteTransferDebounceTimers.delete(file.path);
+      void this.autoTransferRemoteForFile(file);
+    }, 5e3);
+    this.remoteTransferDebounceTimers.set(file.path, timer);
+  }
   configureAutoRemoteTransfer() {
     this.registerEvent(
       this.app.vault.on("create", (file) => {
         if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
           return;
-        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
-          return;
-        const existing = this.remoteTransferDebounceTimers.get(file.path);
-        if (existing)
-          window.clearTimeout(existing);
-        const timer = window.setTimeout(() => {
-          this.remoteTransferDebounceTimers.delete(file.path);
-          void this.autoTransferRemoteForFile(file);
-        }, 5e3);
-        this.remoteTransferDebounceTimers.set(file.path, timer);
+        this.scheduleBackgroundImageSync(file);
       })
     );
     this.registerEvent(
       this.app.vault.on("modify", (file) => {
         if (!(file instanceof import_obsidian6.TFile) || file.extension !== "md")
           return;
-        if (!this.settings.autoTransferRemoteImages || !this.settings.enabled)
-          return;
-        const existing = this.remoteTransferDebounceTimers.get(file.path);
-        if (existing)
-          window.clearTimeout(existing);
-        const timer = window.setTimeout(() => {
-          this.remoteTransferDebounceTimers.delete(file.path);
-          void this.autoTransferRemoteForFile(file);
-        }, 5e3);
-        this.remoteTransferDebounceTimers.set(file.path, timer);
+        this.scheduleBackgroundImageSync(file);
       })
     );
   }
@@ -6060,15 +6101,33 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       return;
     }
     try {
-      const candidates = await this.findRemoteCandidatesInNote(file);
-      if (candidates.length === 0)
-        return;
-      const result = await this.transferRemoteImagesInNote(file, candidates);
-      if (result.replaced > 0) {
-        new import_obsidian6.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+      if (this.settings.linkMode === "cloud") {
+        const mirrorCandidates = (await this.findCandidatesInNote(file, {
+          requireAutoCandidate: false,
+          enforceAttachmentRoot: false,
+          enforceSizeRule: false,
+          skipExtensionFilter: true,
+          includeLocalMirror: true
+        })).filter((candidate) => candidate.mirrorCloudKey && candidate.replacement === "image");
+        if (mirrorCandidates.length > 0) {
+          const result = await this.replaceCandidates(file, mirrorCandidates, null, "cloud");
+          if (result.replaced > 0) {
+            new import_obsidian6.Notice(this.t("autoScanReplaced", { count: result.replaced }));
+          }
+        }
+      }
+      if (this.settings.autoTransferRemoteImages) {
+        const candidates = await this.findRemoteCandidatesInNote(file);
+        if (candidates.length > 0) {
+          const result = await this.transferRemoteImagesInNote(file, candidates);
+          if (result.replaced > 0) {
+            new import_obsidian6.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
+          }
+        }
       }
     } catch (error) {
-      console.error(`Auto remote transfer failed for ${file.path}:`, error);
+      console.error(`Automatic image sync failed for ${file.path}:`, error);
+      new import_obsidian6.Notice(this.t("autoScanFailed", { error: error instanceof Error ? error.message : String(error) }));
     }
   }
   // ─── Link Mode Toggle ──────────────────────────────────────────────
@@ -6080,6 +6139,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
       return;
     }
     let totalChanged = 0;
+    let failed = 0;
     const notice = new import_obsidian6.Notice(this.t("toggleLinkWorking"), 0);
     for (const file of files) {
       try {
@@ -6087,51 +6147,57 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian6.Plugi
         totalChanged += changed;
       } catch (error) {
         console.error(`Toggle links failed for ${file.path}:`, error);
+        failed++;
       }
     }
     notice.hide();
     this.settings.linkMode = targetMode;
     await this.saveSettings();
-    new import_obsidian6.Notice(this.t("toggleLinkDone", { count: totalChanged, mode: targetMode === "local" ? this.t("linkModeLocal") : this.t("linkModeCloud") }));
+    const mode = targetMode === "local" ? this.t("linkModeLocal") : this.t("linkModeCloud");
+    new import_obsidian6.Notice(this.t(failed > 0 ? "toggleLinkDoneWithFailures" : "toggleLinkDone", {
+      count: totalChanged,
+      failed,
+      mode
+    }));
   }
   async toggleLinksInNote(noteFile, targetMode) {
-    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
     const mirrorRoot = trimSlashes(this.settings.localMirrorRoot || "98 cloudflareR2");
-    if (!ownDomain || !mirrorRoot)
+    if (!mirrorRoot)
+      return 0;
+    if (targetMode === "cloud") {
+      const mirrorCandidates = (await this.findCandidatesInNote(noteFile, {
+        requireAutoCandidate: false,
+        enforceAttachmentRoot: false,
+        enforceSizeRule: false,
+        skipExtensionFilter: true,
+        includeLocalMirror: true
+      })).filter((candidate) => candidate.mirrorCloudKey && candidate.replacement === "image");
+      if (mirrorCandidates.length === 0)
+        return 0;
+      const result = await this.replaceCandidates(noteFile, mirrorCandidates, null, "cloud");
+      return result.replaced;
+    }
+    const ownDomain = (this.settings.s3.customDomainName || "").replace(/\/+$/, "").toLowerCase();
+    if (!ownDomain)
       return 0;
     const domainPrefix = ownDomain.includes("://") ? ownDomain : `https://${ownDomain}`;
     let changed = 0;
     await this.app.vault.process(noteFile, (content) => {
       let next = content;
-      if (targetMode === "local") {
-        const cloudRegex = new RegExp(
-          `(!\\[[^\\]]*\\])\\(${this.escapeRegex(domainPrefix)}/([^)]+)\\)`,
-          "g"
-        );
-        next = next.replace(cloudRegex, (_match, labelPart, cloudKeyEncoded) => {
-          const cloudKey = decodeURIComponent(cloudKeyEncoded);
-          const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
-          if (localFile) {
-            changed++;
-            const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
-            return `${labelPart}(${encodedLocal})`;
-          }
-          return _match;
-        });
-      } else {
-        const mirrorPattern = this.escapeRegex(mirrorRoot).replace(/ /g, "(?: |%20)");
-        const localRegex = new RegExp(
-          `(!\\[[^\\]]*\\])\\(${mirrorPattern}/([^)]+)\\)`,
-          "g"
-        );
-        next = next.replace(localRegex, (_match, labelPart, relativePathEncoded) => {
-          const relativePath = decodeURIComponent(relativePathEncoded);
-          const cloudKey = relativePath;
-          const cloudUrl = buildPublicUrl(this.settings.s3.customDomainName, this.settings.s3.endpoint, this.settings.s3.bucketName, cloudKey);
+      const cloudRegex = new RegExp(
+        `(!\\[[^\\]]*\\])\\(${this.escapeRegex(domainPrefix)}/([^)]+)\\)`,
+        "g"
+      );
+      next = next.replace(cloudRegex, (_match, labelPart, cloudKeyEncoded) => {
+        const cloudKey = decodeURIComponent(cloudKeyEncoded);
+        const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
+        if (localFile) {
           changed++;
-          return `${labelPart}(${cloudUrl})`;
-        });
-      }
+          const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
+          return `${labelPart}(${encodedLocal})`;
+        }
+        return _match;
+      });
       return next;
     });
     return changed;
