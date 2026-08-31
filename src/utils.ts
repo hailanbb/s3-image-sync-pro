@@ -1,4 +1,9 @@
-import type { LocalRef, ReplacementType } from "./types";
+import type {
+  LocalRef,
+  RecognizedCloudDomainRecord,
+  ReplacementType,
+  S3Config,
+} from "./types";
 
 export function basename(path: string): string {
   return String(path || "").split("/").pop() || path;
@@ -6,6 +11,127 @@ export function basename(path: string): string {
 
 export function trimSlashes(path: string): string {
   return String(path || "").replace(/^\/+|\/+$/g, "");
+}
+
+export function buildStorageIdentity(
+  s3: S3Config,
+  configuredMirrorRoot: string
+): string {
+  const rawEndpoint = String(s3.endpoint || "").trim().replace(/\/+$/, "");
+  let endpoint = rawEndpoint;
+  try {
+    const parsed = new URL(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(rawEndpoint)
+      ? rawEndpoint
+      : `https://${rawEndpoint}`);
+    endpoint = `${parsed.protocol.toLowerCase()}//${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    // Preserve a literal endpoint because its path may be case-sensitive.
+  }
+  const mirrorRoot = trimSlashes(configuredMirrorRoot || "98 cloudflareR2");
+  let accessKeyFingerprint = 2166136261;
+  for (const char of String(s3.accessKeyId || "")) {
+    accessKeyFingerprint ^= char.charCodeAt(0);
+    accessKeyFingerprint = Math.imul(accessKeyFingerprint, 16777619);
+  }
+  return [
+    s3.provider,
+    endpoint,
+    s3.bucketName,
+    mirrorRoot,
+    (accessKeyFingerprint >>> 0).toString(16),
+  ].join("|");
+}
+
+export function normalizeCloudUrlPrefix(value: string): string {
+  let raw = String(value || "").trim().replace(/\/+$/, "");
+  if (!raw) return "";
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) raw = `https://${raw}`;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Upgrade legacy string prefixes by binding them to the storage selected when
+ * the settings file is loaded. Existing structured records keep their owner.
+ */
+export function normalizeRecognizedCloudDomains(
+  values: readonly unknown[],
+  legacyStorageIdentity: string
+): RecognizedCloudDomainRecord[] {
+  const records = new Map<string, RecognizedCloudDomainRecord>();
+  for (const value of values) {
+    const rawPrefix = typeof value === "string"
+      ? value
+      : value && typeof value === "object" && typeof (value as { prefix?: unknown }).prefix === "string"
+        ? (value as { prefix: string }).prefix
+        : "";
+    const rawIdentity = typeof value === "string"
+      ? legacyStorageIdentity
+      : value && typeof value === "object" &&
+          typeof (value as { storageIdentity?: unknown }).storageIdentity === "string"
+        ? (value as { storageIdentity: string }).storageIdentity
+        : "";
+    const prefix = normalizeCloudUrlPrefix(rawPrefix);
+    const storageIdentity = rawIdentity.trim();
+    if (!prefix || !storageIdentity) continue;
+    records.set(`${storageIdentity}\u0000${prefix}`, { prefix, storageIdentity });
+  }
+  return [...records.values()].slice(-100);
+}
+
+export function cloudUrlPrefixesForStorage(
+  currentPrefix: string,
+  records: readonly RecognizedCloudDomainRecord[],
+  storageIdentity: string
+): string[] {
+  const prefixes = [
+    currentPrefix,
+    ...records
+      .filter((record) => record.storageIdentity === storageIdentity)
+      .map((record) => record.prefix),
+  ]
+    .map(normalizeCloudUrlPrefix)
+    .filter(Boolean);
+  return [...new Set(prefixes)].sort((a, b) => b.length - a.length);
+}
+
+export function cloudKeyFromRecognizedUrl(
+  url: string,
+  prefixes: readonly string[]
+): string | null {
+  let candidate: URL;
+  try {
+    candidate = new URL(url);
+  } catch {
+    return null;
+  }
+  const normalizedPrefixes = [...new Set(prefixes
+    .map(normalizeCloudUrlPrefix)
+    .filter(Boolean))].sort((a, b) => b.length - a.length);
+  for (const prefix of normalizedPrefixes) {
+    try {
+      const base = new URL(prefix);
+      if (candidate.host.toLowerCase() !== base.host.toLowerCase()) continue;
+      const basePath = base.pathname.replace(/\/+$/, "");
+      const keyStart = basePath ? `${basePath}/` : "/";
+      if (!candidate.pathname.startsWith(keyStart)) continue;
+      const encodedKey = candidate.pathname.slice(keyStart.length);
+      if (!encodedKey) continue;
+      try {
+        return trimSlashes(decodeURIComponent(encodedKey)) || null;
+      } catch {
+        return trimSlashes(encodedKey) || null;
+      }
+    } catch {
+      // Ignore malformed historical prefixes.
+    }
+  }
+  return null;
 }
 
 export function cloudKeyFromLocalMirrorPath(filePath: string, mirrorRoot: string): string | null {
@@ -21,7 +147,12 @@ export function safeFilename(name: string): string {
 
 export function usesCanonicalNotePathTemplate(template: string): boolean {
   const normalized = trimSlashes(template).replace(/\\/g, "/");
-  return normalized.startsWith("{notedir}/{notename}/");
+  const segments = normalized.split("/");
+  return segments.length === 3 &&
+    segments[0] === "{notedir}" &&
+    segments[1] === "{notename}" &&
+    segments[2].includes("{filename}") &&
+    segments[2].includes("{ext}");
 }
 
 export function buildCanonicalNoteKey(
@@ -59,6 +190,7 @@ export function renderPathTemplate(
   const hashShort = (values.hash || "").slice(0, 32);
 
   return String(template || "{notedir}/{notename}/{filename}-{hash-short}.{ext}")
+    .replace(/\\/g, "/")
     .replace(/\{ext\}/g, values.ext)
     .replace(/\{hash\}/g, values.hash)
     .replace(/\{hash2\}/g, values.hash2)

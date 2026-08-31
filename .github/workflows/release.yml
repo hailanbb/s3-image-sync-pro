@@ -12,6 +12,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      artifact-metadata: write
 
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +24,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify release version and tag
+        run: npm run verify-release
 
       - name: Test path and deletion safety
         run: npm test
@@ -37,7 +41,7 @@ jobs:
         run: npm run build
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest@v4
         with:
           subject-path: |
             main.js

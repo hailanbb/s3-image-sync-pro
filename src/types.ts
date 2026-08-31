@@ -1,4 +1,5 @@
 import { TFile } from "obsidian";
+import type { PathPolicyRule, ProcessingScopeMode } from "./path-policy";
 
 export type S3Provider = "r2" | "s3" | "minio" | "custom";
 export type ReplacementType = "image" | "markdown" | "audio" | "video";
@@ -33,13 +34,75 @@ export interface PluginSettings {
   deleteRemoteOnNoteDelete: boolean;
   autoUploadOnPaste: boolean;
   autoTransferRemoteImages: boolean;
+  trashOriginalAfterUpload: boolean;
   remoteImageMaxSizeMiB: number;
   syncS3OnNoteMove: boolean;
+  deleteOldObjectAfterPathMigration: boolean;
   localMirrorRoot: string;
+  /** Public URL prefixes, each bound to the exact storage identity that owned it. */
+  recognizedCloudDomains: RecognizedCloudDomainRecord[];
+  processingScopeMode: ProcessingScopeMode;
+  pathPolicies: PathPolicyRule[];
   excludedNotePaths: string[];
   excludedPathSyncKeyPrefixes: string[];
+  startupCatchupEnabled: boolean;
+  /** Notes that still need one successful startup catch-up pass. */
+  startupCatchupPendingPaths: string[];
+  deleteGraceMinutes: number;
+  pruneEmptyMirrorFolders: boolean;
+  noteSyncIndex: Record<string, NoteSyncSnapshot>;
+  pendingDeleteQueue: PendingDeleteRecord[];
+  ownedObjectKeys: OwnedObjectRecord[];
   linkMode: "local" | "cloud";
   logs: LogEntry[];
+}
+
+export interface NoteSyncSnapshot {
+  mtime: number;
+  size: number;
+  keys: string[];
+  storageIdentity?: string;
+}
+
+export interface RecognizedCloudDomainRecord {
+  prefix: string;
+  storageIdentity: string;
+}
+
+export interface PendingDeleteRecord {
+  id: string;
+  notePath: string;
+  authorizationPath?: string;
+  storageIdentity?: string;
+  keys: string[];
+  dueAt: number;
+  reason: "note-delete" | "startup-missing" | "path-migration";
+  attempts: number;
+  expectedVersions?: Record<string, ObjectVersionRecord>;
+  inFlight?: PendingDeleteOperation;
+}
+
+export interface OwnedObjectRecord {
+  key: string;
+  storageIdentity: string;
+  contentSha256?: string;
+  size?: number;
+  /** Operation metadata written by this exact create-only PUT. Missing on legacy/external objects. */
+  operationId?: string;
+  /** ETag observed immediately after the owned PUT. Missing records are never auto-deleted. */
+  etag?: string;
+}
+
+export interface ObjectVersionRecord {
+  contentSha256: string;
+  size: number;
+  operationId: string;
+  etag: string;
+}
+
+export interface PendingDeleteOperation extends ObjectVersionRecord {
+  key: string;
+  startedAt: number;
 }
 
 export interface LocalRef {
@@ -100,8 +163,9 @@ export interface UploadResult {
   key: string;
   publicUrl: string;
   localPath?: string;
-  /** False when a failed note rewrite must not delete this object. */
-  deleteOnRollback?: boolean;
+  /** Held until the note link/index transaction finishes. */
+  operationLockKey?: string;
+  targetNotePath?: string;
 }
 
 export interface LocalFileRecord {

@@ -173,7 +173,6 @@ export class CandidateModal extends Modal {
       this.close();
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("Attachment replacement failed", error);
       new Notice(t("replaceFailed", { error: message }), 10000);
       this.renderError(error instanceof Error ? error : new Error(message));
     }

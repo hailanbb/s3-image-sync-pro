@@ -535,6 +535,48 @@
   border-top: 1px solid var(--background-modifier-border);
 }
 
+/* ── Three-way consistency audit ── */
+.s3-image-sync-audit-modal {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.s3-image-sync-audit-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.s3-image-sync-audit-counts span {
+  padding: 3px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: var(--background-secondary);
+  font-size: 12px;
+}
+
+.s3-image-sync-audit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.s3-image-sync-audit-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+
+.s3-image-sync-audit-row code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 /* ── Mobile Optimization ── */
 @media (max-width: 600px) {
   .modal.attachment-imagebed-manager-modal {

@@ -2,6 +2,25 @@
 
 本文件用于记录重大的系统重构、踩坑解决记录以及核心功能上线的重大里程碑，以便接手人员追溯系统演进历史。
 
+## 2026-08-30 (v1.7.0): directory lifecycle and three-way consistency
+
+- Added explicit directory policies: `staging`, `managed`, `verify`, and `ignore`, while retaining legacy exclusion compatibility.
+- Added a persistent startup queue so notes created or changed while Obsidian was closed are caught up after restart. In directory-policy mode, the first run queues existing `staging` and `managed` notes sequentially; failures remain queued for a later startup. Legacy scope mode still establishes a baseline only.
+- Cloud link mode now adopts ordinary local image attachments as well as exact local-mirror images, while always retaining the canonical local mirror.
+- Reworked note-path migration into signed byte reads, create-only target writes, SHA-256 collision checks, verified local mirroring, note rewrite, and optional delayed old-object cleanup.
+- Replaced immediate note-delete cleanup with a persistent grace-period queue, full-vault reference scans, versioned ownership, write-ahead recovery, per-key locks, protected-prefix checks, and empty mirror-folder pruning.
+- Added read-only quick and deep consistency audits across note references, local mirror files, and paginated S3/R2 object listings.
+- Added signed `GetObject`, `HeadObject`, and `ListObjectsV2`, create-only conditional uploads, historical public-URL recognition, and SHA-256 metadata based on the final uploaded bytes.
+- Split `staging` from `managed`: staging paths accept/upload content without canonical path migration, while managed paths maintain the full note-derived cloud path.
+- Made the plugin enabled setting a true master switch and changed original attachment cleanup to a separate, off-by-default setting.
+- Added CI validation and release metadata checks so package, lockfile, manifest, compatibility map, tag, and Release cannot silently drift apart.
+- Bound every remembered cloud URL prefix to a storage identity, preventing an old URL from one endpoint, bucket, or credential from being migrated or deleted in another storage.
+- Added operation-ID metadata to create-only uploads so a lost success response followed by `412 Precondition Failed` can be reconciled without falsely claiming an external object.
+- Serialized settings persistence and hardened delayed deletion with stable vault snapshots, write-ahead recovery, immediate ambiguous-DELETE reconciliation, reason-aware path authorization, and verified local recovery copies.
+- Bound deletion ownership to operation ID, ETag, SHA-256, and byte size. AWS S3 uses a signed `If-Match` conditional DELETE; R2, MinIO, and custom providers preserve objects because equivalent atomic conditional-delete semantics are not documented as dependable.
+- Changed both remote cleanup switches to off by default and disabled them in settings for providers other than AWS S3.
+- Added sequential managed-folder migration, persistent startup retries, Windows path-template normalization, and a paste transaction that holds the object lock until the note reference is actually saved.
+
 ## 2026-07-23 (v1.2.3 - v1.2.6): WebP 完全支持与兼容性硬核修复
 
 **背景**：为了在不增加用户配置和本地依赖的情况下实现极致的高清截图 WebP 自动压缩，引入了 `@jsquash/webp` (基于 WASM)。但随即引发了一系列隐蔽、崩溃级的问题。经过连续攻坚，彻底修补。

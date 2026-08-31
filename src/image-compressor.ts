@@ -32,7 +32,6 @@ async function ensureWasmInit(): Promise<void> {
     await initWebpEnc(wasmModule);
     wasmInitialized = true;
   } catch (e) {
-    console.error("Failed to initialize WebP WASM encoder:", e);
     throw e;
   }
 }

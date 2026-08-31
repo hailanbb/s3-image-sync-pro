@@ -3,7 +3,8 @@ import type S3ImageSyncPlugin from "./plugin";
 import { FILE_CATEGORIES } from "./file-categories";
 import { FileCategory, S3Provider, S3Config } from "./types";
 import { debounce } from "./utils";
-import { testS3Connection } from "./s3-client";
+import { supportsAtomicConditionalDelete, testS3Connection } from "./s3-client";
+import { formatPathPolicyLines, parsePathPolicyLines } from "./path-policy";
 
 const CATEGORY_ICONS: Record<string, string> = {
   image: "\ud83d\udcf7",
@@ -99,6 +100,10 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
             } else if (!this.plugin.settings.s3.region || this.plugin.settings.s3.region === "auto") {
               this.plugin.settings.s3.region = "us-east-1";
             }
+            if (!supportsAtomicConditionalDelete(this.plugin.settings.s3)) {
+              this.plugin.settings.deleteRemoteOnNoteDelete = false;
+              this.plugin.settings.deleteOldObjectAfterPathMigration = false;
+            }
             void save();
             this.renderSettings();
           })
@@ -125,6 +130,13 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
     ];
 
     for (const [key, label, desc, isPassword] of s3Fields) {
+      const changesCloudPrefix = ["endpoint", "bucketName", "customDomainName"].includes(key);
+      let previousCloudPrefix = changesCloudPrefix
+        ? this.plugin.getCloudUrlPrefix()
+        : "";
+      let previousStorageIdentity = changesCloudPrefix
+        ? this.plugin.getStorageIdentity()
+        : "";
       new Setting(containerEl)
         .setName(label)
         .setDesc(desc)
@@ -136,8 +148,35 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
             (this.plugin.settings.s3 as unknown as Record<string, string>)[s3Key] = value.trim();
             debouncedSave();
           });
+          if (changesCloudPrefix) {
+            text.inputEl.addEventListener("focus", () => {
+              previousCloudPrefix = this.plugin.getCloudUrlPrefix();
+              previousStorageIdentity = this.plugin.getStorageIdentity();
+            });
+            text.inputEl.addEventListener("change", () => {
+              if (this.plugin.rememberCloudUrlPrefix(previousCloudPrefix, previousStorageIdentity)) void save();
+              previousCloudPrefix = this.plugin.getCloudUrlPrefix();
+              previousStorageIdentity = this.plugin.getStorageIdentity();
+            });
+          }
         });
     }
+
+    new Setting(containerEl)
+      .setName(t("recognizedCloudDomains"))
+      .setDesc(t("recognizedCloudDomainsDesc"))
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("https://old-cdn.example.com")
+          .setValue(this.plugin.getHistoricalCloudUrlPrefixes().join("\n"))
+          .onChange((value) => {
+            this.plugin.replaceHistoricalCloudUrlPrefixes([...new Set(value
+              .split(/\r?\n/)
+              .map((domain) => domain.trim().replace(/\/+$/, ""))
+              .filter(Boolean))]);
+            void save();
+          })
+      );
 
     const descFragment = createFragment((frag) => {
       t("pathTemplateDesc")
@@ -202,6 +241,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         toggle.setValue(this.plugin.settings.enabled).onChange((value) => {
           this.plugin.settings.enabled = value;
           this.plugin.configureAutoScan();
+          if (value) void this.plugin.initRemoteUrlCache();
           void save();
         })
       );
@@ -223,6 +263,16 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.autoTransferRemoteImages).onChange((value) => {
           this.plugin.settings.autoTransferRemoteImages = value;
+          void save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName(t("trashOriginalAfterUpload"))
+      .setDesc(t("trashOriginalAfterUploadDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.trashOriginalAfterUpload).onChange((value) => {
+          this.plugin.settings.trashOriginalAfterUpload = value;
           void save();
         })
       );
@@ -253,20 +303,63 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName(t("excludedNotePaths"))
-      .setDesc(t("excludedNotePathsDesc"))
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("06 已归档")
-          .setValue(this.plugin.settings.excludedNotePaths.join("\n"))
+      .setName(t("processingScopeMode"))
+      .setDesc(t("processingScopeModeDesc"))
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("legacy", t("processingScopeLegacy"))
+          .addOption("policy", t("processingScopePolicy"))
+          .setValue(this.plugin.settings.processingScopeMode)
           .onChange((value) => {
-            this.plugin.settings.excludedNotePaths = value
-              .split(/\r?\n/)
-              .map((path) => path.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""))
-              .filter(Boolean);
+            this.plugin.settings.processingScopeMode = value === "policy" ? "policy" : "legacy";
             void save();
+            this.renderSettings();
           })
       );
+
+    new Setting(containerEl)
+      .setName(t("deleteOldObjectAfterPathMigration"))
+      .setDesc(t("deleteOldObjectAfterPathMigrationDesc"))
+      .addToggle((toggle) =>
+        toggle
+          .setDisabled(!supportsAtomicConditionalDelete(this.plugin.settings.s3))
+          .setValue(this.plugin.settings.deleteOldObjectAfterPathMigration).onChange((value) => {
+          this.plugin.settings.deleteOldObjectAfterPathMigration = value;
+          void save();
+          this.renderSettings();
+        })
+      );
+
+    if (this.plugin.settings.processingScopeMode === "policy") {
+      new Setting(containerEl)
+        .setName(t("pathPolicies"))
+        .setDesc(t("pathPoliciesDesc"))
+        .addTextArea((text) =>
+          text
+            .setPlaceholder("staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup")
+            .setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies))
+            .onChange((value) => {
+              this.plugin.settings.pathPolicies = parsePathPolicyLines(value);
+              void save();
+            })
+        );
+    } else {
+      new Setting(containerEl)
+        .setName(t("excludedNotePaths"))
+        .setDesc(t("excludedNotePathsDesc"))
+        .addTextArea((text) =>
+          text
+            .setPlaceholder("06 已归档")
+            .setValue(this.plugin.settings.excludedNotePaths.join("\n"))
+            .onChange((value) => {
+              this.plugin.settings.excludedNotePaths = value
+                .split(/\r?\n/)
+                .map((path) => path.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""))
+                .filter(Boolean);
+              void save();
+            })
+        );
+    }
 
     new Setting(containerEl)
       .setName(t("excludedPathSyncKeyPrefixes"))
@@ -316,12 +409,53 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       .setName(t("deleteRemoteOnNoteDelete"))
       .setDesc(t("deleteRemoteOnNoteDeleteDesc"))
       .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.deleteRemoteOnNoteDelete).onChange((value) => {
+        toggle
+          .setDisabled(!supportsAtomicConditionalDelete(this.plugin.settings.s3))
+          .setValue(this.plugin.settings.deleteRemoteOnNoteDelete).onChange((value) => {
           this.plugin.settings.deleteRemoteOnNoteDelete = value;
           if (value) void this.plugin.initRemoteUrlCache();
           void save();
+          this.renderSettings();
         })
       );
+
+    new Setting(containerEl)
+      .setName(t("startupCatchupEnabled"))
+      .setDesc(t("startupCatchupEnabledDesc"))
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.startupCatchupEnabled).onChange((value) => {
+          this.plugin.settings.startupCatchupEnabled = value;
+          void save();
+        })
+      );
+
+    if (
+      this.plugin.settings.deleteRemoteOnNoteDelete ||
+      this.plugin.settings.deleteOldObjectAfterPathMigration
+    ) {
+      new Setting(containerEl)
+        .setName(t("deleteGraceMinutes"))
+        .setDesc(t("deleteGraceMinutesDesc"))
+        .addText((text) =>
+          text.setValue(String(this.plugin.settings.deleteGraceMinutes)).onChange((value) => {
+            const minutes = Number(value);
+            if (Number.isFinite(minutes) && minutes >= 1) {
+              this.plugin.settings.deleteGraceMinutes = Math.round(minutes);
+              debouncedSave();
+            }
+          })
+        );
+
+      new Setting(containerEl)
+        .setName(t("pruneEmptyMirrorFolders"))
+        .setDesc(t("pruneEmptyMirrorFoldersDesc"))
+        .addToggle((toggle) =>
+          toggle.setValue(this.plugin.settings.pruneEmptyMirrorFolders).onChange((value) => {
+            this.plugin.settings.pruneEmptyMirrorFolders = value;
+            void save();
+          })
+        );
+    }
 
     new Setting(containerEl)
       .setName(t("webpCompression"))
@@ -371,13 +505,13 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       .setDesc(t("attachmentRootDesc"))
       .addText((text) =>
         text
-          .setPlaceholder("90-笔记系统/92-附件")
+          .setPlaceholder(t("attachmentRootPlaceholder"))
           .setValue(this.plugin.settings.attachmentRoot)
           .onChange((value) => {
             this.plugin.settings.attachmentRoot = value
               .trim()
               .replace(/\\/g, "/")
-              .replace(/^\/+|\/+$/g, "") || "90-笔记系统/92-附件";
+              .replace(/^\/+|\/+$/g, "");
             debouncedSave();
           })
       );
@@ -628,6 +762,20 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
     const settings = this.plugin.settings;
 
     new Setting(containerEl).setName(t("recentLog")).setHeading();
+
+    if (settings.pendingDeleteQueue.length > 0) {
+      containerEl.createEl("p", {
+        text: t("pendingDeleteSummary", { count: settings.pendingDeleteQueue.length }),
+        cls: "attachment-imagebed-manager-meta",
+      });
+      containerEl.createEl("pre", {
+        text: settings.pendingDeleteQueue
+          .slice(0, 20)
+          .map((record) => `${new Date(record.dueAt).toLocaleString()}  ${record.reason}  ${record.notePath}  (${record.keys.length})`)
+          .join("\n"),
+        cls: "attachment-imagebed-manager-log",
+      });
+    }
 
     const logs = (settings.logs || []).slice(0, 20);
     if (logs.length > 0) {
