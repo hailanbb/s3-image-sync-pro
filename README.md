@@ -885,7 +885,7 @@ WebP 质量压缩可能是有损的。插件保存的镜像与最终上传字节
 
 ## 开发、测试与发布
 
-环境要求：Node.js 20 或更高版本、npm。
+环境要求：Node.js 24 或更高版本、npm。
 
 ```bash
 git clone https://github.com/hailanbb/s3-image-sync-pro.git
