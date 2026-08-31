@@ -2,6 +2,12 @@
 
 本文件用于记录重大的系统重构、踩坑解决记录以及核心功能上线的重大里程碑，以便接手人员追溯系统演进历史。
 
+## 2026-08-31 (v1.7.2): English community README
+
+- Replaced the repository's default README with a complete English setup, usage, safety, and troubleshooting guide for the primarily English-speaking community directory.
+- Preserved the full beginner-oriented Chinese manual as `README.zh-CN.md` and linked both language versions prominently.
+- Kept plugin runtime behavior unchanged; this patch addresses the README language warning found on the community review page after 1.7.1 was released.
+
 ## 2026-08-31 (v1.7.1): community review compliance
 
 - Removed the redundant product name from the manifest description, as required by the community directory.

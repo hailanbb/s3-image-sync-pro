@@ -1,7 +1,7 @@
 {
   "id": "s-three-image-sync-pro",
   "name": "S3 Image Sync Pro",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "minAppVersion": "1.6.6",
   "description": "Keep image links, a local mirror, and S3/R2 objects consistent with safe directory policies and audits.",
   "author": "hailanbb",

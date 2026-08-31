@@ -1,6 +1,6 @@
 {
   "name": "s3-image-sync-pro",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Keep image links, a local mirror, and S3/R2 objects consistent with safe directory policies and audits.",
   "main": "main.js",
   "scripts": {
