@@ -3863,7 +3863,7 @@ function shouldRetry(status) {
   return status === 429 || status >= 500;
 }
 function createPutOperationId() {
-  const cryptoApi = globalThis.crypto;
+  const cryptoApi = activeWindow.crypto;
   if (!cryptoApi)
     throw new Error("Secure random generator is unavailable");
   if (typeof cryptoApi.randomUUID === "function")
@@ -4279,18 +4279,14 @@ async function deleteS3Object(config, key, expectedEtag) {
       "x-amz-date": amzDate,
       Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
     };
-    try {
-      const response = await (0, import_obsidian.requestUrl)({ url, method: "DELETE", headers, throw: false });
-      if (response.status >= 200 && response.status < 300)
-        return "deleted";
-      if (response.status === 404)
-        return "missing";
-      if (response.status === 409 || response.status === 412)
-        return "precondition-failed";
-      throw new Error(`S3 delete failed (${response.status}): ${response.text || ""}`);
-    } catch (error) {
-      throw error;
-    }
+    const response = await (0, import_obsidian.requestUrl)({ url, method: "DELETE", headers, throw: false });
+    if (response.status >= 200 && response.status < 300)
+      return "deleted";
+    if (response.status === 404)
+      return "missing";
+    if (response.status === 409 || response.status === 412)
+      return "precondition-failed";
+    throw new Error(`S3 delete failed (${response.status}): ${response.text || ""}`);
   }
   throw new Error("S3 delete failed with an uncertain outcome");
 }
@@ -4491,6 +4487,7 @@ var I18N = {
     webpQualityDesc: "Compression quality (1-100). Higher = better quality, larger file. Default: 80",
     webpSkipFormats: "Skip formats",
     webpSkipFormatsDesc: "File extensions to skip for WebP conversion (comma-separated). SVG and GIF are skipped by default.",
+    webpSkipFormatsPlaceholder: "svg, gif",
     automaticScan: "Auto-scan vault periodically",
     automaticScanDesc: "Automatically find and replace eligible images in the background.",
     scanInterval: "Scan interval (minutes)",
@@ -4554,8 +4551,10 @@ var I18N = {
     processingScopePolicy: "Directory policies (recommended)",
     pathPolicies: "Directory policy rules",
     pathPoliciesDesc: "One rule per line. staging ingests/uploads without path migration; managed also maintains canonical paths; verify is read-only; ignore is protected. Longest match wins and unmatched paths are ignored.",
+    pathPoliciesPlaceholder: "staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup",
     excludedPathSyncKeyPrefixes: "Cloud key prefixes excluded from path sync",
     excludedPathSyncKeyPrefixesDesc: "One S3 object-key prefix per line. Images managed by other tools remain available for display, download, and link switching, but are never moved by note-path sync. Default: mpclipper",
+    excludedPathSyncKeyPrefixesPlaceholder: "mpclipper",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
     s3PathSyncFailed: "S3 path sync failed: {error}",
     commandResyncPaths: "Re-sync all S3 image paths",
@@ -4590,6 +4589,7 @@ var I18N = {
     migrationDone: "Migration complete: {downloaded} downloaded, {skipped} already exist.",
     localMirrorRoot: "Local mirror directory",
     localMirrorRootDesc: "Directory inside your vault to store local copies of uploaded images. Default: 98 cloudflareR2",
+    localMirrorRootPlaceholder: "98 cloudflareR2",
     linkModeLabel: "Default link mode",
     linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL. In Cloud mode, mirror links created by Obsidian or other tools are uploaded and rewritten after the note settles."
   },
@@ -4741,6 +4741,7 @@ var I18N = {
     webpQualityDesc: "\u538B\u7F29\u8D28\u91CF (1-100)\uFF0C\u6570\u503C\u8D8A\u9AD8\u8D28\u91CF\u8D8A\u597D\u3001\u4F53\u79EF\u8D8A\u5927\u3002\u9ED8\u8BA4\uFF1A80",
     webpSkipFormats: "\u8DF3\u8FC7\u7684\u683C\u5F0F",
     webpSkipFormatsDesc: "\u4E0D\u8FDB\u884C WebP \u8F6C\u6362\u7684\u6587\u4EF6\u6269\u5C55\u540D\uFF08\u9017\u53F7\u5206\u9694\uFF09\u3002SVG \u548C GIF \u9ED8\u8BA4\u8DF3\u8FC7\u3002",
+    webpSkipFormatsPlaceholder: "svg, gif",
     automaticScan: "\u5B9A\u671F\u81EA\u52A8\u626B\u63CF\u5168\u5E93",
     automaticScanDesc: "\u81EA\u52A8\u5728\u540E\u53F0\u67E5\u627E\u5E76\u66FF\u6362\u7B26\u5408\u6761\u4EF6\u7684\u56FE\u7247\u3002",
     scanInterval: "\u626B\u63CF\u95F4\u9694\uFF08\u5206\u949F\uFF09",
@@ -4804,10 +4805,12 @@ var I18N = {
     processingScopePolicy: "\u76EE\u5F55\u7B56\u7565\uFF08\u63A8\u8350\uFF09",
     pathPolicies: "\u76EE\u5F55\u7B56\u7565\u89C4\u5219",
     pathPoliciesDesc: "\u6BCF\u884C\u4E00\u6761\u3002staging \u8D1F\u8D23\u63A5\u5165\u3001\u4E0A\u4F20\u548C\u5207\u6362\u94FE\u63A5\u4F46\u4E0D\u8FC1\u79FB\u8DEF\u5F84\uFF1Bmanaged \u8FD8\u7EF4\u62A4\u89C4\u8303\u8DEF\u5F84\uFF1Bverify \u53EA\u8BFB\u6821\u5BF9\uFF1Bignore \u5B8C\u5168\u4FDD\u62A4\u3002\u6700\u957F\u5339\u914D\u4F18\u5148\uFF0C\u672A\u5339\u914D\u9ED8\u8BA4\u5FFD\u7565\u3002",
+    pathPoliciesPlaceholder: "staging: 01 \u5F85\u9605\u6536\u4EF6\u7BB1\nmanaged: 06 \u5DF2\u5F52\u6863\nverify: 04 wiki\nignore: 03 \u5DF2\u6574\u7406",
     excludedNotePaths: "\u4E0D\u5904\u7406\u7684\u7B14\u8BB0\u8DEF\u5F84",
     excludedNotePathsDesc: "\u6BCF\u884C\u586B\u5199\u4E00\u4E2A Vault \u5185\u6587\u4EF6\u5939\u8DEF\u5F84\u3002\u8BE5\u8DEF\u5F84\u4E0B\u7684\u7B14\u8BB0\u4E0D\u4F1A\u88AB\u626B\u63CF\u3001\u4E0A\u4F20\u3001\u6539\u5199\u94FE\u63A5\u3001\u4E0B\u8F7D\u955C\u50CF\u6216\u540C\u6B65\u8DEF\u5F84\u3002",
     excludedPathSyncKeyPrefixes: "\u4E0D\u53C2\u4E0E\u8DEF\u5F84\u540C\u6B65\u7684\u4E91\u7AEF\u952E\u524D\u7F00",
     excludedPathSyncKeyPrefixesDesc: "\u6BCF\u884C\u586B\u5199\u4E00\u4E2A S3 \u5BF9\u8C61\u952E\u524D\u7F00\u3002\u5176\u4ED6\u5DE5\u5177\u7BA1\u7406\u7684\u56FE\u7247\u53EF\u663E\u793A\uFF0C\u4F46\u4E0D\u4F1A\u88AB\u672C\u63D2\u4EF6\u8FC1\u79FB\u6216\u81EA\u52A8\u5220\u9664\u3002\u9ED8\u8BA4\uFF1Ampclipper",
+    excludedPathSyncKeyPrefixesPlaceholder: "mpclipper",
     s3PathSynced: "\u5DF2\u5C06 {count} \u5F20 S3 \u56FE\u7247\u8FC1\u79FB\u81F3\u65B0\u8DEF\u5F84\u3002",
     s3PathSyncFailed: "S3 \u8DEF\u5F84\u540C\u6B65\u5931\u8D25\uFF1A{error}",
     commandResyncPaths: "\u91CD\u65B0\u540C\u6B65\u5168\u90E8 S3 \u56FE\u7247\u8DEF\u5F84",
@@ -4842,6 +4845,7 @@ var I18N = {
     migrationDone: "\u8FC1\u79FB\u5B8C\u6210\uFF1A{downloaded} \u5F20\u5DF2\u4E0B\u8F7D\uFF0C{skipped} \u5F20\u5DF2\u5B58\u5728\u3002",
     localMirrorRoot: "\u672C\u5730\u955C\u50CF\u76EE\u5F55",
     localMirrorRootDesc: "\u7528\u4E8E\u5B58\u50A8\u4E0A\u4F20\u56FE\u7247\u672C\u5730\u526F\u672C\u7684 Vault \u5185\u76EE\u5F55\u3002\u9ED8\u8BA4\uFF1A98 cloudflareR2",
+    localMirrorRootPlaceholder: "98 cloudflareR2",
     linkModeLabel: "\u9ED8\u8BA4\u94FE\u63A5\u6A21\u5F0F",
     linkModeDesc: "\u63A7\u5236\u65B0\u56FE\u7247\u94FE\u63A5\u9ED8\u8BA4\u6307\u5411\u672C\u5730\u955C\u50CF\u8FD8\u662F\u4E91\u7AEF URL\u3002\u4E91\u7AEF\u6A21\u5F0F\u4E0B\uFF0CObsidian \u6216\u5176\u4ED6\u5DE5\u5177\u65B0\u5EFA\u7684\u955C\u50CF\u56FE\u7247\u94FE\u63A5\u4F1A\u5728\u7B14\u8BB0\u7A33\u5B9A\u540E\u81EA\u52A8\u8865\u4F20\u5E76\u6539\u5199\u3002"
   }
@@ -4853,7 +4857,15 @@ function detectLocaleFromApp(getLanguage2) {
 function t(locale, key, params = {}) {
   const pack = I18N[locale] || I18N.en;
   const template = pack[key] || I18N.en[key] || key;
-  return template.replace(/\\\{([\w-]+)\}/g, "___ESCAPED_START___$1}").replace(/\{([\w-]+)\}/g, (_, name) => String(params[name] ?? "")).replace(/___ESCAPED_START___([\w-]+)\}/g, "{$1}");
+  return template.replace(/\\\{([\w-]+)\}/g, "___ESCAPED_START___$1}").replace(/\{([\w-]+)\}/g, (_, name) => {
+    const value = params[name];
+    if (typeof value === "string")
+      return value;
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+      return String(value);
+    }
+    return "";
+  }).replace(/___ESCAPED_START___([\w-]+)\}/g, "{$1}");
 }
 
 // src/candidate-modal.ts
@@ -5178,13 +5190,9 @@ var wasmInitialized = false;
 async function ensureWasmInit() {
   if (wasmInitialized)
     return;
-  try {
-    const wasmModule = await WebAssembly.compile(webp_enc_default2);
-    await init(wasmModule);
-    wasmInitialized = true;
-  } catch (e) {
-    throw e;
-  }
+  const wasmModule = await WebAssembly.compile(webp_enc_default2);
+  await init(wasmModule);
+  wasmInitialized = true;
 }
 async function decodeImage(binary, ext) {
   const lowerExt = ext.toLowerCase();
@@ -5560,7 +5568,7 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
     );
     if (this.plugin.settings.processingScopeMode === "policy") {
       new import_obsidian4.Setting(containerEl).setName(t2("pathPolicies")).setDesc(t2("pathPoliciesDesc")).addTextArea(
-        (text) => text.setPlaceholder("staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup").setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies)).onChange((value) => {
+        (text) => text.setPlaceholder(t2("pathPoliciesPlaceholder")).setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies)).onChange((value) => {
           this.plugin.settings.pathPolicies = parsePathPolicyLines(value);
           void save();
         })
@@ -5574,13 +5582,13 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       );
     }
     new import_obsidian4.Setting(containerEl).setName(t2("excludedPathSyncKeyPrefixes")).setDesc(t2("excludedPathSyncKeyPrefixesDesc")).addTextArea(
-      (text) => text.setPlaceholder("mpclipper").setValue(this.plugin.settings.excludedPathSyncKeyPrefixes.join("\n")).onChange((value) => {
+      (text) => text.setPlaceholder(t2("excludedPathSyncKeyPrefixesPlaceholder")).setValue(this.plugin.settings.excludedPathSyncKeyPrefixes.join("\n")).onChange((value) => {
         this.plugin.settings.excludedPathSyncKeyPrefixes = value.split(/\r?\n/).map((prefix) => prefix.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")).filter(Boolean);
         void save();
       })
     );
     new import_obsidian4.Setting(containerEl).setName(t2("localMirrorRoot")).setDesc(t2("localMirrorRootDesc")).addText(
-      (text) => text.setPlaceholder("98 cloudflareR2").setValue(this.plugin.settings.localMirrorRoot).onChange((value) => {
+      (text) => text.setPlaceholder(t2("localMirrorRootPlaceholder")).setValue(this.plugin.settings.localMirrorRoot).onChange((value) => {
         this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
         void save();
       })
@@ -5638,7 +5646,7 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
         })
       );
       new import_obsidian4.Setting(containerEl).setName(t2("webpSkipFormats")).setDesc(t2("webpSkipFormatsDesc")).addText(
-        (text) => text.setPlaceholder("svg, gif").setValue(this.plugin.settings.webpSkipFormats.join(", ")).onChange((value) => {
+        (text) => text.setPlaceholder(t2("webpSkipFormatsPlaceholder")).setValue(this.plugin.settings.webpSkipFormats.join(", ")).onChange((value) => {
           this.plugin.settings.webpSkipFormats = value.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
           debouncedSave();
         })
@@ -5944,7 +5952,7 @@ function normalizeAuditKey(value) {
   return String(value || "").trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/").replace(/^\.\/+/, "").replace(/^\/+|\/+$/g, "");
 }
 function normalizeHash(value) {
-  const normalized = String(value || "").trim().replace(/^W\//i, "").replace(/^['\"]|['\"]$/g, "").replace(/^sha-?256\s*[:=]\s*/i, "").toLowerCase();
+  const normalized = String(value || "").trim().replace(/^W\//i, "").replace(/^['"]|['"]$/g, "").replace(/^sha-?256\s*[:=]\s*/i, "").toLowerCase();
   return normalized || void 0;
 }
 function normalizedSize(value) {
@@ -6248,19 +6256,19 @@ var ConsistencyAuditModal = class extends import_obsidian6.Modal {
         row.createEl("strong", { text: this.plugin.t(`auditType_${issue.type}`) });
         row.createEl("code", { text: issue.key });
         if (issue.expectedKey) {
-          row.createEl("div", {
+          row.createDiv({
             text: this.plugin.t("auditExpectedPath", { path: issue.expectedKey }),
             cls: "setting-item-description"
           });
         }
         if (issue.notePaths.length > 0) {
-          row.createEl("div", {
+          row.createDiv({
             text: issue.notePaths.join("\u3001"),
             cls: "setting-item-description"
           });
         }
         if (issue.protectedPrefix) {
-          row.createEl("div", {
+          row.createDiv({
             text: this.plugin.t("auditProtectedBy", { prefix: issue.protectedPrefix }),
             cls: "setting-item-description"
           });
@@ -8154,10 +8162,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
       const initialTotal = this.startupCatchupQueue.size;
       const notice = new import_obsidian7.Notice(this.t("startupCatchupWorking", { done: 0, total: initialTotal }), 0);
       while (this.startupCatchupQueue.size > 0) {
-        const entry = this.startupCatchupQueue.entries().next().value;
-        if (!entry)
+        let path;
+        for (const queuedPath of this.startupCatchupQueue.keys()) {
+          path = queuedPath;
           break;
-        const [path] = entry;
+        }
+        if (!path)
+          break;
         this.startupCatchupQueue.delete(path);
         const current = this.app.vault.getAbstractFileByPath(path);
         if (!(current instanceof import_obsidian7.TFile) || current.extension !== "md" || !canMutate(this.getNotePathMode(path))) {

@@ -14,6 +14,12 @@ const [pkg, lock, manifest, versions] = await Promise.all([
 const version = String(manifest.version || "");
 const errors = [];
 if (!/^\d+\.\d+\.\d+$/.test(version)) errors.push(`Invalid manifest version: ${version}`);
+const description = String(manifest.description || "");
+if (/obsidian/i.test(description)) {
+  errors.push('manifest description must not contain the word "Obsidian"');
+}
+if (description.length > 250) errors.push("manifest description must be at most 250 characters");
+if (!description.endsWith(".")) errors.push("manifest description must end with a period");
 if (pkg.version !== version) errors.push(`package.json is ${pkg.version}, expected ${version}`);
 if (lock.version !== version) errors.push(`package-lock.json is ${lock.version}, expected ${version}`);
 if (lock.packages?.[""]?.version !== version) {

@@ -107,7 +107,7 @@ function normalizeHash(value: string | undefined): string | undefined {
   const normalized = String(value || "")
     .trim()
     .replace(/^W\//i, "")
-    .replace(/^['\"]|['\"]$/g, "")
+    .replace(/^['"]|['"]$/g, "")
     .replace(/^sha-?256\s*[:=]\s*/i, "")
     .toLowerCase();
   return normalized || undefined;

@@ -63,19 +63,19 @@ export class ConsistencyAuditModal extends Modal {
         row.createEl("strong", { text: this.plugin.t(`auditType_${issue.type}`) });
         row.createEl("code", { text: issue.key });
         if (issue.expectedKey) {
-          row.createEl("div", {
+          row.createDiv({
             text: this.plugin.t("auditExpectedPath", { path: issue.expectedKey }),
             cls: "setting-item-description",
           });
         }
         if (issue.notePaths.length > 0) {
-          row.createEl("div", {
+          row.createDiv({
             text: issue.notePaths.join("、"),
             cls: "setting-item-description",
           });
         }
         if (issue.protectedPrefix) {
-          row.createEl("div", {
+          row.createDiv({
             text: this.plugin.t("auditProtectedBy", { prefix: issue.protectedPrefix }),
             cls: "setting-item-description",
           });

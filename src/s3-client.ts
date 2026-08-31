@@ -77,7 +77,7 @@ function shouldRetry(status: number): boolean {
 }
 
 function createPutOperationId(): string {
-  const cryptoApi = globalThis.crypto;
+  const cryptoApi = activeWindow.crypto;
   if (!cryptoApi) throw new Error("Secure random generator is unavailable");
   if (typeof cryptoApi.randomUUID === "function") return cryptoApi.randomUUID();
 
@@ -618,17 +618,13 @@ export async function deleteS3Object(
       Authorization: `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
     };
 
-    try {
-      const response = await requestUrl({ url, method: "DELETE", headers, throw: false });
-      
-      if (response.status >= 200 && response.status < 300) return "deleted";
-      if (response.status === 404) return "missing";
-      if (response.status === 409 || response.status === 412) return "precondition-failed";
+    const response = await requestUrl({ url, method: "DELETE", headers, throw: false });
 
-      throw new Error(`S3 delete failed (${response.status}): ${response.text || ""}`);
-    } catch (error: unknown) {
-      throw error;
-    }
+    if (response.status >= 200 && response.status < 300) return "deleted";
+    if (response.status === 404) return "missing";
+    if (response.status === 409 || response.status === 412) return "precondition-failed";
+
+    throw new Error(`S3 delete failed (${response.status}): ${response.text || ""}`);
   }
   throw new Error("S3 delete failed with an uncertain outcome");
 }

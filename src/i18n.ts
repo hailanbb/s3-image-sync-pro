@@ -171,6 +171,7 @@ export const I18N: Record<string, Record<string, string>> = {
     webpQualityDesc: "Compression quality (1-100). Higher = better quality, larger file. Default: 80",
     webpSkipFormats: "Skip formats",
     webpSkipFormatsDesc: "File extensions to skip for WebP conversion (comma-separated). SVG and GIF are skipped by default.",
+    webpSkipFormatsPlaceholder: "svg, gif",
     automaticScan: "Auto-scan vault periodically",
     automaticScanDesc: "Automatically find and replace eligible images in the background.",
     scanInterval: "Scan interval (minutes)",
@@ -238,8 +239,10 @@ export const I18N: Record<string, Record<string, string>> = {
     processingScopePolicy: "Directory policies (recommended)",
     pathPolicies: "Directory policy rules",
     pathPoliciesDesc: "One rule per line. staging ingests/uploads without path migration; managed also maintains canonical paths; verify is read-only; ignore is protected. Longest match wins and unmatched paths are ignored.",
+    pathPoliciesPlaceholder: "staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup",
     excludedPathSyncKeyPrefixes: "Cloud key prefixes excluded from path sync",
     excludedPathSyncKeyPrefixesDesc: "One S3 object-key prefix per line. Images managed by other tools remain available for display, download, and link switching, but are never moved by note-path sync. Default: mpclipper",
+    excludedPathSyncKeyPrefixesPlaceholder: "mpclipper",
     s3PathSynced: "Moved {count} S3 image(s) to match new note path.",
     s3PathSyncFailed: "S3 path sync failed: {error}",
     commandResyncPaths: "Re-sync all S3 image paths",
@@ -275,6 +278,7 @@ export const I18N: Record<string, Record<string, string>> = {
     migrationDone: "Migration complete: {downloaded} downloaded, {skipped} already exist.",
     localMirrorRoot: "Local mirror directory",
     localMirrorRootDesc: "Directory inside your vault to store local copies of uploaded images. Default: 98 cloudflareR2",
+    localMirrorRootPlaceholder: "98 cloudflareR2",
     linkModeLabel: "Default link mode",
     linkModeDesc: "Controls whether new image links point to the local mirror or cloud URL. In Cloud mode, mirror links created by Obsidian or other tools are uploaded and rewritten after the note settles.",
   },
@@ -447,6 +451,7 @@ export const I18N: Record<string, Record<string, string>> = {
     webpQualityDesc: "压缩质量 (1-100)，数值越高质量越好、体积越大。默认：80",
     webpSkipFormats: "跳过的格式",
     webpSkipFormatsDesc: "不进行 WebP 转换的文件扩展名（逗号分隔）。SVG 和 GIF 默认跳过。",
+    webpSkipFormatsPlaceholder: "svg, gif",
     automaticScan: "定期自动扫描全库",
     automaticScanDesc: "自动在后台查找并替换符合条件的图片。",
     scanInterval: "扫描间隔（分钟）",
@@ -514,10 +519,12 @@ export const I18N: Record<string, Record<string, string>> = {
     processingScopePolicy: "目录策略（推荐）",
     pathPolicies: "目录策略规则",
     pathPoliciesDesc: "每行一条。staging 负责接入、上传和切换链接但不迁移路径；managed 还维护规范路径；verify 只读校对；ignore 完全保护。最长匹配优先，未匹配默认忽略。",
+    pathPoliciesPlaceholder: "staging: 01 待阅收件箱\nmanaged: 06 已归档\nverify: 04 wiki\nignore: 03 已整理",
     excludedNotePaths: "不处理的笔记路径",
     excludedNotePathsDesc: "每行填写一个 Vault 内文件夹路径。该路径下的笔记不会被扫描、上传、改写链接、下载镜像或同步路径。",
     excludedPathSyncKeyPrefixes: "不参与路径同步的云端键前缀",
     excludedPathSyncKeyPrefixesDesc: "每行填写一个 S3 对象键前缀。其他工具管理的图片可显示，但不会被本插件迁移或自动删除。默认：mpclipper",
+    excludedPathSyncKeyPrefixesPlaceholder: "mpclipper",
     s3PathSynced: "已将 {count} 张 S3 图片迁移至新路径。",
     s3PathSyncFailed: "S3 路径同步失败：{error}",
     commandResyncPaths: "重新同步全部 S3 图片路径",
@@ -553,6 +560,7 @@ export const I18N: Record<string, Record<string, string>> = {
     migrationDone: "迁移完成：{downloaded} 张已下载，{skipped} 张已存在。",
     localMirrorRoot: "本地镜像目录",
     localMirrorRootDesc: "用于存储上传图片本地副本的 Vault 内目录。默认：98 cloudflareR2",
+    localMirrorRootPlaceholder: "98 cloudflareR2",
     linkModeLabel: "默认链接模式",
     linkModeDesc: "控制新图片链接默认指向本地镜像还是云端 URL。云端模式下，Obsidian 或其他工具新建的镜像图片链接会在笔记稳定后自动补传并改写。",
   },
@@ -568,6 +576,13 @@ export function t(locale: string, key: string, params: Record<string, unknown> =
   const template = pack[key] || I18N.en[key] || key;
   return template
     .replace(/\\\{([\w-]+)\}/g, "___ESCAPED_START___$1}")
-    .replace(/\{([\w-]+)\}/g, (_: string, name: string) => String(params[name] ?? ""))
+    .replace(/\{([\w-]+)\}/g, (_: string, name: string) => {
+      const value = params[name];
+      if (typeof value === "string") return value;
+      if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+        return String(value);
+      }
+      return "";
+    })
     .replace(/___ESCAPED_START___([\w-]+)\}/g, "{$1}");
 }

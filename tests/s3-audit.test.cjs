@@ -136,6 +136,8 @@ assert.throws(
 );
 
 async function testSignedGetObject() {
+  const originalActiveWindow = global.activeWindow;
+  global.activeWindow = { crypto: globalThis.crypto };
   const cryptoModule = loadTsModule("src/crypto.ts");
   const utilsModule = loadTsModule("src/utils.ts");
   let requestHandler;
@@ -421,6 +423,7 @@ async function testSignedGetObject() {
     assert.equal(forbiddenAttempts, 1);
   } finally {
     global.window = originalWindow;
+    global.activeWindow = originalActiveWindow;
   }
 }
 

@@ -27,13 +27,9 @@ let wasmInitialized = false;
  */
 async function ensureWasmInit(): Promise<void> {
   if (wasmInitialized) return;
-  try {
-    const wasmModule = await WebAssembly.compile(webpEncWasm);
-    await initWebpEnc(wasmModule);
-    wasmInitialized = true;
-  } catch (e) {
-    throw e;
-  }
+  const wasmModule = await WebAssembly.compile(webpEncWasm);
+  await initWebpEnc(wasmModule);
+  wasmInitialized = true;
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "name": "s3-image-sync-pro",
-  "version": "1.7.0",
-  "description": "Keep Obsidian image links, a local mirror, and S3/R2 objects consistent with safe directory policies and audits.",
+  "version": "1.7.1",
+  "description": "Keep image links, a local mirror, and S3/R2 objects consistent with safe directory policies and audits.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -19,7 +19,8 @@
     "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.61.1",
     "esbuild": "0.20.0",
-    "eslint": "^8.57.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.2",
     "obsidian": "^1.5.0",
     "typescript": "5.3.3"
   },

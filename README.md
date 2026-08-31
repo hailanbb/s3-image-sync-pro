@@ -8,7 +8,7 @@
 
 [下载最新版](https://github.com/hailanbb/s3-image-sync-pro/releases/latest) · [提交问题](https://github.com/hailanbb/s3-image-sync-pro/issues) · [架构变更](docs/CHANGES.md) · [English overview](#english-overview)
 
-当前文档对应 **1.7.0**。它以完全没有 S3、R2 使用经验的读者为主要对象；如果你已经熟悉这些概念，可以直接阅读[目录策略](#目录策略四种模式)、[与 Agent 和整理插件配合](#与-agent-和整理插件配合)或[三方一致性校对](#三方一致性校对)。
+当前文档对应 **1.7.1**。它以完全没有 S3、R2 使用经验的读者为主要对象；如果你已经熟悉这些概念，可以直接阅读[目录策略](#目录策略四种模式)、[与 Agent 和整理插件配合](#与-agent-和整理插件配合)或[三方一致性校对](#三方一致性校对)。
 
 ## 目录
 
@@ -136,12 +136,12 @@
 
 `.obsidian` 通常是隐藏目录。如果看不到，请先在系统文件管理器中显示隐藏文件。
 
-### 从旧版本升级到 1.7.0
+### 从旧版本升级到 1.7.1
 
 1. 停用插件或关闭 Obsidian。
 2. 安全备份插件目录中的 `data.json`。它含凭据，不要上传到网盘公开链接或 GitHub。
 3. 用 Release 中的三个文件覆盖旧文件，**不要删除 `data.json`**。
-4. 启动 Obsidian，确认插件版本是 `1.7.0`。
+4. 启动 Obsidian，确认插件版本是 `1.7.1`。
 5. 打开设置检查目录范围：旧用户仍保留“旧版排除目录”模式，不会被自动改成目录策略。
 6. 第一次启用“目录策略”时先配置规则，再运行快速校对。
 7. 检查两个删除开关和“待延迟删除”数量，再用测试笔记分别验证路径迁移与笔记删除的宽限流程。
@@ -916,7 +916,7 @@ npm run dev
 
 GitHub Actions 分成两条流水线：
 
-- **CI**：推送到 `master` 或向 `master` 提交 Pull Request 时，在 Node.js 20 上依次执行依赖锁定安装、测试、类型检查、Lint、版本元数据校验和生产构建；同一分支的新运行会取消旧运行。
+- **CI**：推送到 `master` 或向 `master` 提交 Pull Request 时，在 Node.js 24 上依次执行依赖锁定安装、测试、类型检查、官方 Obsidian 规则 Lint、版本元数据校验和生产构建；同一分支的新运行会取消旧运行。
 - **Release**：推送 Tag 后再次执行版本校验、测试、类型检查、Lint 和构建；只有 Tag 与 `manifest.json` / npm 版本精确一致时才能发布。随后为 `main.js`、`manifest.json`、`styles.css` 生成 GitHub artifact attestation，并把这三个文件附加到带自动发行说明的 Release。
 
 本地分支执行 `npm run verify-release` 只检查版本文件一致性；GitHub 的 Tag 环境还会额外检查 Tag 名，避免普通分支名被误当成版本号。
@@ -933,16 +933,17 @@ GitHub Actions 分成两条流水线：
 
 | 版本 | 重点 | 状态 |
 | --- | --- | --- |
-| 1.7.0 | 四种目录策略、启动补处理、签名下载、历史 URL、事务式路径迁移、版本化延迟删除、三方一致性校对与 CI/Release 防漂移 | 当前文档与当前代码版本 |
+| 1.7.1 | 修复社区目录审核项，并把官方 Obsidian ESLint 规则和描述规范纳入本地检查及 CI | 当前文档与当前代码版本 |
+| 1.7.0 | 四种目录策略、启动补处理、签名下载、历史 URL、事务式路径迁移、版本化延迟删除、三方一致性校对与 CI/Release 防漂移 | 历史版本；因描述规范错误已被社区目录撤下，请升级到 1.7.1 |
 | 1.6.9 | 本地镜像孤儿恢复、镜像精确键上传、切换到云端前先上传、Agent/脚本写入后的后台接管 | 历史版本 |
 | 1.6.5–1.6.8 | 云端/镜像规范路径、Obsidian 源码规范、受保护键前缀与路径同步安全边界 | 历史版本 |
 | 1.5.5 | 仓库历史中存在对应版本内容，但此前缺少匹配的 Git Tag / GitHub Release；现已补发历史标签与 Release，`versions.json` 也恢复 `1.5.5 → Obsidian 1.6.6` 兼容映射 | 已补发历史 Release；不作为 Latest |
 
-日常安装请始终使用 [Latest Release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)。补发 1.5.5 只是修复发布历史完整性，不代表它比 1.7.0 更新，也不建议把 1.7.0 降级覆盖成 1.5.5。更完整的技术演进见 [docs/CHANGES.md](docs/CHANGES.md)。
+日常安装请始终使用 [Latest Release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)。补发 1.5.5 只是修复发布历史完整性，不代表它比 1.7.1 更新，也不建议把 1.7.1 降级覆盖成 1.5.5。更完整的技术演进见 [docs/CHANGES.md](docs/CHANGES.md)。
 
 ## English overview
 
-S3 Image Sync Pro 1.7.0 is an Obsidian plugin for Cloudflare R2, AWS S3, MinIO, and other S3-compatible object stores. It manages three related views of an image: the Markdown reference, the local mirror inside the vault, and the cloud object.
+S3 Image Sync Pro 1.7.1 is an Obsidian plugin for Cloudflare R2, AWS S3, MinIO, and other S3-compatible object stores. It manages three related views of an image: the Markdown reference, the local mirror inside the vault, and the cloud object.
 
 Its core invariant is:
 
@@ -955,7 +956,7 @@ S3 object key
 
 Cloud vs. Local link mode only changes the link written into Markdown. Every successful upload still creates both the cloud object and the exact local mirror.
 
-### Highlights in 1.7.0
+### Highlights in 1.7.x
 
 - Four path-policy modes: `staging`, `managed`, `verify`, and `ignore`.
 - `staging` accepts and mirrors incoming images without canonical path migration; `managed` owns the final note-derived object path. `verify` is read-only, while `ignore` references still protect objects from orphan classification and deletion.

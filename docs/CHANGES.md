@@ -2,6 +2,14 @@
 
 本文件用于记录重大的系统重构、踩坑解决记录以及核心功能上线的重大里程碑，以便接手人员追溯系统演进历史。
 
+## 2026-08-31 (v1.7.1): community review compliance
+
+- Removed the redundant product name from the manifest description, as required by the community directory.
+- Cleared the reported source warnings: redundant regex escaping, generic `createEl("div")` calls, pass-through try/catch blocks, an unnecessary iterator assertion, and `globalThis` usage.
+- Added the official `eslint-plugin-obsidianmd` recommended rules to local development and CI so community-review findings are caught before release.
+- Added release validation for the manifest description length, final period, and prohibited product-name wording.
+- Kept all 1.7.0 synchronization, migration, mirror, and deletion semantics unchanged; this is a review-compliance patch release.
+
 ## 2026-08-30 (v1.7.0): directory lifecycle and three-way consistency
 
 - Added explicit directory policies: `staging`, `managed`, `verify`, and `ignore`, while retaining legacy exclusion compatibility.

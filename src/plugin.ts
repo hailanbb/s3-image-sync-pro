@@ -2185,9 +2185,12 @@ export default class S3ImageSyncPlugin extends Plugin {
       const notice = new Notice(this.t("startupCatchupWorking", { done: 0, total: initialTotal }), 0);
 
       while (this.startupCatchupQueue.size > 0) {
-        const entry = this.startupCatchupQueue.entries().next().value as [string, TFile] | undefined;
-        if (!entry) break;
-        const [path] = entry;
+        let path: string | undefined;
+        for (const queuedPath of this.startupCatchupQueue.keys()) {
+          path = queuedPath;
+          break;
+        }
+        if (!path) break;
         this.startupCatchupQueue.delete(path);
         const current = this.app.vault.getAbstractFileByPath(path);
 

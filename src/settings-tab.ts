@@ -336,7 +336,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         .setDesc(t("pathPoliciesDesc"))
         .addTextArea((text) =>
           text
-            .setPlaceholder("staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup")
+            .setPlaceholder(t("pathPoliciesPlaceholder"))
             .setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies))
             .onChange((value) => {
               this.plugin.settings.pathPolicies = parsePathPolicyLines(value);
@@ -366,7 +366,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       .setDesc(t("excludedPathSyncKeyPrefixesDesc"))
       .addTextArea((text) =>
         text
-          .setPlaceholder("mpclipper")
+          .setPlaceholder(t("excludedPathSyncKeyPrefixesPlaceholder"))
           .setValue(this.plugin.settings.excludedPathSyncKeyPrefixes.join("\n"))
           .onChange((value) => {
             this.plugin.settings.excludedPathSyncKeyPrefixes = value
@@ -382,7 +382,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       .setDesc(t("localMirrorRootDesc"))
       .addText((text) =>
         text
-          .setPlaceholder("98 cloudflareR2")
+          .setPlaceholder(t("localMirrorRootPlaceholder"))
           .setValue(this.plugin.settings.localMirrorRoot)
           .onChange((value) => {
             this.plugin.settings.localMirrorRoot = value.trim() || "98 cloudflareR2";
@@ -488,7 +488,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
         .setDesc(t("webpSkipFormatsDesc"))
         .addText((text) =>
           text
-            .setPlaceholder("svg, gif")
+            .setPlaceholder(t("webpSkipFormatsPlaceholder"))
             .setValue(this.plugin.settings.webpSkipFormats.join(", "))
             .onChange((value) => {
               this.plugin.settings.webpSkipFormats = value
