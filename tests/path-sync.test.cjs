@@ -206,6 +206,15 @@ assert.equal(
   buildLinkReplacement(wikiRef, "image", "https://img.example.test/path/image.jpg"),
   "![01_大脑两套系统-88c44ceb5b33a8bf18702984236d8544.jpg](https://img.example.test/path/image.jpg)"
 );
+assert.equal(
+  buildLinkReplacement(
+    { ...wikiRef, kind: "wiki", raw: `[[${actualMirrorPath}]]` },
+    "image",
+    "https://img.example.test/path/image.jpg",
+    { excalidraw: true }
+  ),
+  "https://img.example.test/path/image.jpg"
+);
 
 const { extractLocalRefs } = loadTsModule("src/link-parser.ts");
 const refs = extractLocalRefs(

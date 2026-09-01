@@ -229,11 +229,14 @@ export function escapeMarkdownLabel(label: string): string {
 export function buildLinkReplacement(
   ref: LocalRef,
   replacement: ReplacementType,
-  targetUrl: string
+  targetUrl: string,
+  options: { excalidraw?: boolean } = {}
 ): string {
   const url = ref.fragment
     ? `${targetUrl}#${encodeURIComponent(ref.fragment)}`
     : targetUrl;
+  if (options.excalidraw && replacement === "image") return url;
+
   const label = escapeMarkdownLabel(ref.label || basename(ref.target));
 
   if (replacement === "image") return `![${label}](${url})`;
