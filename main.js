@@ -3198,8 +3198,10 @@ function replaceAllLiteral(text, search, replacement) {
 function escapeMarkdownLabel(label) {
   return String(label || "attachment").replace(/\]/g, "\\]");
 }
-function buildLinkReplacement(ref, replacement, targetUrl) {
+function buildLinkReplacement(ref, replacement, targetUrl, options = {}) {
   const url = ref.fragment ? `${targetUrl}#${encodeURIComponent(ref.fragment)}` : targetUrl;
+  if (options.excalidraw && replacement === "image")
+    return url;
   const label = escapeMarkdownLabel(ref.label || basename(ref.target));
   if (replacement === "image")
     return `![${label}](${url})`;
@@ -6830,6 +6832,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     const text = await this.app.vault.read(noteFile);
     const refs = extractLocalRefs(text);
     const byKey = /* @__PURE__ */ new Map();
+    const isExcalidraw = this.isExcalidrawMarkdown(noteFile);
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
       if (!targetFile || !(targetFile instanceof import_obsidian7.TFile))
@@ -6854,7 +6857,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
       if (options.enforceSizeRule !== false && !this.meetsSizeRule(targetFile, ext))
         continue;
       const replacement = getReplacementForExt(ext, this.settings);
-      if (mirrorCloudKey && replacement === "image" && ref.kind !== "wiki-embed" && ref.kind !== "markdown-embed")
+      if (mirrorCloudKey && replacement === "image" && !isExcalidraw && ref.kind !== "wiki-embed" && ref.kind !== "markdown-embed")
         continue;
       const key = `${targetFile.path}::${replacement}`;
       const existing = byKey.get(key);
@@ -6951,7 +6954,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         }
         for (const ref of candidate.refs) {
           const targetUrl = targetMode === "local" && upload.localPath ? upload.localPath.split("/").map(encodeURIComponent).join("/") : upload.publicUrl;
-          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl));
+          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl, noteFile));
         }
       }
       progress?.({
@@ -7272,8 +7275,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     const binary = await this.app.vault.readBinary(candidate.file);
     return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
-  buildReplacement(ref, candidate, publicUrl) {
-    return buildLinkReplacement(ref, candidate.replacement, publicUrl);
+  isExcalidrawMarkdown(noteFile) {
+    return noteFile.name.toLowerCase().endsWith(".excalidraw.md");
+  }
+  buildReplacement(ref, candidate, publicUrl, noteFile) {
+    return buildLinkReplacement(ref, candidate.replacement, publicUrl, {
+      excalidraw: noteFile ? this.isExcalidrawMarkdown(noteFile) : false
+    });
   }
   buildLocalFileRecords(candidates, uploaded) {
     const byPath = /* @__PURE__ */ new Map();

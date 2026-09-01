@@ -642,6 +642,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     const text = await this.app.vault.read(noteFile);
     const refs = extractLocalRefs(text);
     const byKey = new Map<string, Candidate>();
+    const isExcalidraw = this.isExcalidrawMarkdown(noteFile);
 
     for (const ref of refs) {
       const targetFile = this.resolveLinkedFile(ref.target, noteFile);
@@ -666,6 +667,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       if (
         mirrorCloudKey &&
         replacement === "image" &&
+        !isExcalidraw &&
         ref.kind !== "wiki-embed" &&
         ref.kind !== "markdown-embed"
       ) continue;
@@ -773,7 +775,7 @@ export default class S3ImageSyncPlugin extends Plugin {
           const targetUrl = (targetMode === "local" && upload.localPath)
             ? upload.localPath.split("/").map(encodeURIComponent).join("/") 
             : upload.publicUrl;
-          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl));
+          replacementMap.set(ref.raw, this.buildReplacement(ref, candidate, targetUrl, noteFile));
         }
       }
 
@@ -1122,8 +1124,14 @@ export default class S3ImageSyncPlugin extends Plugin {
     return this.uploadBuffer(binary, candidate.file.name, noteFile, candidate.file.path);
   }
 
-  buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string): string {
-    return buildLinkReplacement(ref, candidate.replacement, publicUrl);
+  isExcalidrawMarkdown(noteFile: TFile): boolean {
+    return noteFile.name.toLowerCase().endsWith(".excalidraw.md");
+  }
+
+  buildReplacement(ref: LocalRef, candidate: Candidate, publicUrl: string, noteFile?: TFile): string {
+    return buildLinkReplacement(ref, candidate.replacement, publicUrl, {
+      excalidraw: noteFile ? this.isExcalidrawMarkdown(noteFile) : false,
+    });
   }
 
   buildLocalFileRecords(
