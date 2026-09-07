@@ -2,6 +2,15 @@
 
 本文件用于记录重大的系统重构、踩坑解决记录以及核心功能上线的重大里程碑，以便接手人员追溯系统演进历史。
 
+## 2026-09-07 (v1.8.0): preview and create-only mirror restore
+
+- Replace immediate bulk mirror overwrites with a read-only, byte-hash preview and explicit missing-only restore.
+- Preserve identical files and content conflicts; pin preview hashes, recheck references and configuration, and reject unsafe mirror paths.
+- Add cooperative cancellation, one active download dialog, 50-row pagination and credential-free full JSON reports copied on request.
+- Require an exact local mirror path/extension for link switching; remove same-stem extension guessing.
+- Add engine and real-plugin-adapter fault-injection tests; update both beginner guides and release metadata without changing user settings or deletion policy.
+- Scope, costs and remaining limitations: [MIRROR-RESTORE-1.8.0.md](MIRROR-RESTORE-1.8.0.md).
+
 ## 2026-09-07 (v1.7.3): reliable link rewrites and durable background work
 
 - Replace only freshly parsed link spans in uploads, remote transfers, toggles and path migration; preserve code examples and Markdown titles.

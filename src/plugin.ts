@@ -68,6 +68,8 @@ import {
   ReferenceSnapshotEntry,
 } from "./deletion-safety";
 import { SerializedAsyncQueue } from "./serialized-async-queue";
+import { MirrorDownloadModal } from "./mirror-download-modal";
+import { MirrorDownloadPort, MirrorEntry, MirrorTaskStopped, mirrorDownloadPath, previewMirrorEntry, restoreMissingMirrorEntry } from "./mirror-download";
 
 interface PathMigrationContext {
   s3: S3Config;
@@ -100,6 +102,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   locale!: string;
   autoScanTimer: number | null = null;
   isMobile: boolean = false;
+  private mirrorDownloadActive = false;
   private noteRemoteUrls: Map<string, string[]> = new Map();
   private deleteQueueTimer: number | null = null;
   private startupTimer: number | null = null;
@@ -852,42 +855,6 @@ export default class S3ImageSyncPlugin extends Plugin {
         }
       }
     }
-  }
-
-  private async downloadCloudKeyToMirror(
-    cloudKey: string,
-    s3Config: S3Config = this.settings.s3,
-    mirrorRoot: string = this.settings.localMirrorRoot
-  ): Promise<"downloaded" | "unchanged" | "missing"> {
-    const localPath = this.getLocalMirrorPathForCloudKey(cloudKey, mirrorRoot);
-    if (!localPath) return "missing";
-    const response = await getS3Object(s3Config, cloudKey);
-    if (!response.exists) return "missing";
-    const remoteHash = await sha256Hex(response.body);
-    if (response.contentSha256 && response.contentSha256 !== remoteHash) {
-      throw new Error(`Cloud object hash verification failed: ${cloudKey}`);
-    }
-    const parentDir = localPath.substring(0, localPath.lastIndexOf("/"));
-    if (parentDir) await this.ensureFolderExists(parentDir);
-    const existing = this.app.vault.getAbstractFileByPath(localPath);
-    if (existing instanceof TFile && existing.stat.size === response.body.byteLength) {
-      const existingHash = await sha256Hex(new Uint8Array(await this.app.vault.readBinary(existing)));
-      if (existingHash === remoteHash) return "unchanged";
-    }
-    const binary = response.body.buffer.slice(
-      response.body.byteOffset,
-      response.body.byteOffset + response.body.byteLength
-    );
-    if (existing instanceof TFile) {
-      await this.app.vault.modifyBinary(existing, binary);
-    } else {
-      await this.app.vault.createBinary(localPath, binary);
-    }
-    const saved = this.app.vault.getAbstractFileByPath(localPath);
-    if (!(saved instanceof TFile)) throw new Error(`Local mirror was not created: ${localPath}`);
-    const savedHash = await sha256Hex(new Uint8Array(await this.app.vault.readBinary(saved)));
-    if (savedHash !== remoteHash) throw new Error(`Local mirror hash verification failed: ${localPath}`);
-    return "downloaded";
   }
 
   /** Returns true only when an existing object is byte-for-byte identical. */
@@ -2794,28 +2761,8 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   private findLocalMirrorForCloudKey(cloudKey: string, mirrorRoot: string): string | null {
-    const exactPath = `${mirrorRoot}/${trimSlashes(cloudKey)}`;
-    if (this.app.vault.getAbstractFileByPath(exactPath) instanceof TFile) {
-      return exactPath;
-    }
-
-    // Cloud key might have .webp extension, but local file has original extension
-    const stem = cloudKey.replace(/\.[^/.]+$/, "");
-    const candidates = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "tiff", "avif"];
-
-    // Just in case the file was saved with a non-standard extension (like the previous .640 bug)
-    const exactExt = cloudKey.split(".").pop();
-    if (exactExt && !candidates.includes(exactExt.toLowerCase())) {
-      candidates.push(exactExt);
-    }
-
-    for (const ext of candidates) {
-      const tryPath = `${mirrorRoot}/${stem}.${ext}`;
-      if (this.app.vault.getAbstractFileByPath(tryPath)) {
-        return tryPath;
-      }
-    }
-    return null;
+    const exactPath = mirrorDownloadPath(mirrorRoot, cloudKey);
+    return exactPath && this.app.vault.getAbstractFileByPath(exactPath) instanceof TFile ? exactPath : null;
   }
 
   // ─── Three-way consistency audit ──────────────────────────────────
@@ -2918,6 +2865,10 @@ export default class S3ImageSyncPlugin extends Plugin {
   // ─── Cloud to Local Migration ─────────────────────────────────────
 
   async downloadCloudToLocal(): Promise<void> {
+    if (this.mirrorDownloadActive) {
+      new Notice(this.t("mirrorAlreadyOpen"));
+      return;
+    }
     if (!this.settings.enabled) {
       new Notice(this.t("disabled"));
       return;
@@ -2935,46 +2886,87 @@ export default class S3ImageSyncPlugin extends Plugin {
       return;
     }
 
-    const files = this.app.vault.getMarkdownFiles();
-    let downloaded = 0;
-    let skipped = 0;
-    let failed = 0;
-    const processedKeys = new Set<string>();
-    const notice = new Notice(this.t("migrationWorking"), 0);
-
-    for (const file of files) {
-      if (this.isIgnoredNote(file)) continue;
-      // Use extractRemoteUrls — already handles URL decoding and derives cloud keys
-      const cloudKeys = this.extractRemoteUrls(await this.app.vault.read(file));
-      for (const cloudKey of cloudKeys) {
-        if (processedKeys.has(cloudKey)) continue;
-        processedKeys.add(cloudKey);
-        const localPath = this.getLocalMirrorPathForCloudKey(cloudKey);
-        if (!localPath) {
-          failed++;
-          continue;
-        }
-
-        try {
-          const result = await this.downloadCloudKeyToMirror(cloudKey);
-          if (result === "missing") {
-            failed++;
-          } else if (result === "unchanged") {
-            skipped++;
-          } else {
-            downloaded++;
-            notice.setMessage(this.t("migrationProgress", { count: downloaded }));
+    const s3 = { ...this.settings.s3 };
+    // Keep this comparison in memory only: it includes secrets and must never enter a report/log.
+    const context = (): string => JSON.stringify([
+      this.settings.s3, this.settings.localMirrorRoot, this.settings.processingScopeMode,
+      this.settings.pathPolicies, this.settings.excludedNotePaths, this.getCloudUrlPrefixes(),
+    ]);
+    const snapshot = context();
+    const checkContext = (): void => {
+      if (this.disposed || !this.settings.enabled || snapshot !== context()) throw new MirrorTaskStopped();
+    };
+    const stillReferenced = async (entry: MirrorEntry): Promise<boolean> => {
+      for (const path of entry.notePaths) {
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile) || this.isIgnoredNote(file)) continue;
+        const keys = this.extractRemoteUrls(await this.app.vault.read(file));
+        if (file.path === path && !this.isIgnoredNote(file) && keys.includes(entry.key)) return true;
+      }
+      return false;
+    };
+    const portFor = (check: () => void): MirrorDownloadPort => {
+      const guard = (): void => { check(); checkContext(); };
+      return {
+        check: guard,
+        readCloud: async (key) => {
+          const response = await getS3Object(s3, key);
+          return response.exists ? response : null;
+        },
+        readLocal: async (path) => {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          if (!file) return null;
+          if (!(file instanceof TFile)) throw new Error("Mirror path is occupied by a folder");
+          return new Uint8Array(await this.app.vault.readBinary(file));
+        },
+        createLocal: async (entry, body) => {
+          guard();
+          if (!await stillReferenced(entry)) throw new Error("Reference changed");
+          guard();
+          await this.ensureFolderExists(entry.localPath.substring(0, entry.localPath.lastIndexOf("/")));
+          if (!await stillReferenced(entry)) throw new Error("Reference changed");
+          guard();
+          // createBinary rejects an existing destination, including a concurrent writer's file.
+          // Never use modifyBinary here, even after a previous absence check.
+          await this.app.vault.createBinary(entry.localPath, body.slice().buffer);
+        },
+      };
+    };
+    this.mirrorDownloadActive = true;
+    new MirrorDownloadModal(this.app, (key, params) => this.t(key, params), async (check, progress) => {
+      const port = portFor(check);
+      const entries = new Map<string, MirrorEntry>();
+      for (const file of this.app.vault.getMarkdownFiles()) {
+        port.check();
+        if (this.isIgnoredNote(file)) continue;
+        for (const key of this.extractRemoteUrls(await this.app.vault.read(file))) {
+          const existing = entries.get(key);
+          if (existing) { if (!existing.notePaths.includes(file.path)) existing.notePaths.push(file.path); }
+          else {
+            const localPath = mirrorDownloadPath(mirrorRoot, key);
+            entries.set(key, { key, localPath: localPath || "", notePaths: [file.path], status: localPath ? "missing" : "failed", failure: localPath ? undefined : "path" });
           }
-        } catch {
-          failed++;
         }
       }
-    }
-
-    notice.hide();
-    const msgParts = [`下载: ${downloaded}`, `跳过: ${skipped}`];
-    if (failed > 0) msgParts.push(`失败: ${failed}`);
-    new Notice(`迁移完成 — ${msgParts.join("  |  ")}`);
+      let count = 0;
+      for (const entry of entries.values()) {
+        port.check();
+        if (entry.localPath) await previewMirrorEntry(port, entry);
+        progress(++count);
+      }
+      port.check();
+      return [...entries.values()];
+    }, async (entry, check) => {
+      if (entry.status !== "missing") return;
+      const port = portFor(check);
+      port.check();
+      if (!await stillReferenced(entry)) { entry.status = "changed"; return; }
+      port.check();
+      if (this.keyOperations.has(entry.key)) { entry.status = "changed"; return; }
+      this.reserveKeyOperation(entry.key);
+      try { await restoreMissingMirrorEntry(port, entry); }
+      finally { this.releaseKeyOperation(entry.key); }
+    }, () => { this.mirrorDownloadActive = false; }).open();
   }
 
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
