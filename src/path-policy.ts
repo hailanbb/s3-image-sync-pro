@@ -157,6 +157,13 @@ export function parsePathPolicyLines(value: string): PathPolicyRule[] {
   return rules;
 }
 
+/** Report invalid draft lines without changing the active rules. */
+export function invalidPathPolicyLines(value: string): number[] {
+  return value.split(/\r?\n/).flatMap((line, index) =>
+    line.trim() && parsePathPolicyLines(line).length !== 1 ? [index + 1] : []
+  );
+}
+
 /** Format rules in the canonical, language-neutral `mode: vault/path` form. */
 export function formatPathPolicyLines(rules: readonly PathPolicyRule[]): string {
   return (rules || [])

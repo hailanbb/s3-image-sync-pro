@@ -1,14 +1,14 @@
 # S3 Image Sync Pro 中文使用手册
 
 [![GitHub release](https://img.shields.io/github/v/release/hailanbb/s3-image-sync-pro?display_name=tag&sort=semver)](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)
-[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.6.6-7C3AED)](https://obsidian.md/)
+[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.8.7-7C3AED)](https://obsidian.md/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 > 面向 Obsidian 的 S3 / Cloudflare R2 图片上传、本地镜像、路径迁移、安全删除与三方一致性校对插件。
 
 [English README](README.md) · [下载最新版](https://github.com/hailanbb/s3-image-sync-pro/releases/latest) · [提交问题](https://github.com/hailanbb/s3-image-sync-pro/issues) · [架构变更](docs/CHANGES.md)
 
-当前文档对应 **1.7.2**。它以完全没有 S3、R2 使用经验的读者为主要对象；如果你已经熟悉这些概念，可以直接阅读[目录策略](#目录策略四种模式)、[与 Agent 和整理插件配合](#与-agent-和整理插件配合)或[三方一致性校对](#三方一致性校对)。
+当前文档对应 **1.7.3**，最低需要 **Obsidian 1.8.7**。它以完全没有 S3、R2 使用经验的读者为主要对象；如果你已经熟悉这些概念，可以直接阅读[目录策略](#目录策略四种模式)、[与 Agent 和整理插件配合](#与-agent-和整理插件配合)或[三方一致性校对](#三方一致性校对)。
 
 ## 目录
 
@@ -38,6 +38,16 @@
 - [English overview](#english-overview)
 
 ## 一分钟理解插件
+
+### 1.7.3 升级前先看
+
+- 先备份 Vault 和插件设置，并确认 Obsidian **不低于 1.8.7**。插件启动使用的 `getLanguage()` 从该版本提供；旧版本的兼容映射作为历史记录保留，不代表重新验证过旧构建。
+- 上传、转存、切换和路径迁移重新解析写入时的最新笔记，只替换识别出的链接位置，保护围栏代码块、行内代码和 HTML 注释中的示例。修复 `%23`、字面百分号、括号及 Markdown 图片标题的处理。
+- 后台任务执行前保存待处理意图。失败跨重启保留；符合后台触发条件的任务从 1 分钟起退避重试，最长 1 小时。同篇笔记不并行重复执行，新修改不会被旧任务标记完成。部分网络图片转存失败仍会保留任务。
+- 编辑目录规则后需要点击 **“应用规则”**。输入中间状态不生效；无效行会提示并保留旧规则。空规则在目录策略模式下表示没有任何匹配目录。本次不会自动更改已有目录模式和删除开关。
+- 仍不是完整 CommonMark / Excalidraw 支持；引用式图片、任意 HTML 和第三方绘图内部数据不保证识别。无法识别不能作为删除授权。
+
+详细实现与后续计划见 [1.7.3 可靠性说明](docs/RELIABILITY-1.7.3.md)。大库校对重构和 Excalidraw 完整适配不包含在本次补丁中。
 
 插件同时面对三类数据：
 
@@ -70,7 +80,7 @@
 
 > `images.example.com` 只是文档示例，并非可用服务地址。
 
-“默认链接模式”只决定**笔记里写云端 URL，还是写本地镜像路径**。无论选择云端还是本地，只要上传成功，插件都会同时建立云端对象和本地镜像。云端链接只有属于当前 URL 前缀或“识别的历史 URL 前缀”时，才会被插件当作自己的对象引用。
+“默认链接模式”决定**笔记里写云端 URL，还是写本地镜像路径**；目前也影响后台接管：云端模式会自动处理普通本地图片，本地模式不因普通新建/修改事件自动上传本地图片。粘贴/拖拽和手动上传是独立入口。无论选择云端还是本地，只要上传成功，插件都会同时建立云端对象和本地镜像。云端链接只有属于当前 URL 前缀或“识别的历史 URL 前缀”时，才会被插件当作自己的对象引用。
 
 ## 它能做什么，不能做什么
 
@@ -136,12 +146,12 @@
 
 `.obsidian` 通常是隐藏目录。如果看不到，请先在系统文件管理器中显示隐藏文件。
 
-### 从旧版本升级到 1.7.2
+### 从旧版本升级到 1.7.3
 
 1. 停用插件或关闭 Obsidian。
 2. 安全备份插件目录中的 `data.json`。它含凭据，不要上传到网盘公开链接或 GitHub。
 3. 用 Release 中的三个文件覆盖旧文件，**不要删除 `data.json`**。
-4. 启动 Obsidian，确认插件版本是 `1.7.2`。
+4. 启动 Obsidian，确认插件版本是 `1.7.3`。
 5. 打开设置检查目录范围：旧用户仍保留“旧版排除目录”模式，不会被自动改成目录策略。
 6. 第一次启用“目录策略”时先配置规则，再运行快速校对。
 7. 检查两个删除开关和“待延迟删除”数量，再用测试笔记分别验证路径迁移与笔记删除的宽限流程。
@@ -237,7 +247,7 @@ R2 Bucket 默认不公开。你可以：
 默认链接模式：本地
 上传路径模板：{notedir}/{notename}/{filename}-{hash-short}.{ext}
 上传后将原附件移入回收站：关闭
-路径迁移后清理旧对象：开启（如需零云端删除，可在测试时关闭）
+路径迁移后清理旧对象：关闭
 删除笔记时同步删除云端图片：关闭
 ```
 
@@ -633,7 +643,7 @@ S3 / R2 没有真实目录，控制台中看到的目录只是对象键前缀。
 | 上传后将原附件移入回收站 | 关闭 | 只影响镜像外原附件；共享附件建议保持关闭 |
 | 单张图片最大下载体积 | 10 MiB | 只限制外部网络图片转存 |
 | 移动笔记时同步 S3 图片路径 | 开启 | 目标为 `managed` 的单篇笔记立即迁移；整个文件夹移动时，内部 `managed` 笔记顺序迁移 |
-| 路径迁移后清理旧对象 | 开启 | 与笔记删除开关独立；只把已确认精确版本的迁移旧对象放入宽限队列 |
+| 路径迁移后清理旧对象 | 关闭 | 与笔记删除开关独立；只把已确认精确版本的迁移旧对象放入宽限队列 |
 | 目录处理范围 | 旧版排除目录 | 新用户建议配置完成后切到目录策略 |
 | 目录策略规则 | 空 | `staging`、`managed`、`verify`、`ignore`；未匹配默认忽略 |
 | 不处理的笔记路径 | 空 | 只在旧版范围模式中出现；其余路径视为 managed |
@@ -919,7 +929,7 @@ GitHub Actions 分成两条流水线：
 - **CI**：推送到 `master` 或向 `master` 提交 Pull Request 时，在 Node.js 24 上依次执行依赖锁定安装、测试、类型检查、官方 Obsidian 规则 Lint、版本元数据校验和生产构建；同一分支的新运行会取消旧运行。
 - **Release**：推送 Tag 后再次执行版本校验、测试、类型检查、Lint 和构建；只有 Tag 与 `manifest.json` / npm 版本精确一致时才能发布。随后为 `main.js`、`manifest.json`、`styles.css` 生成 GitHub artifact attestation，并把这三个文件附加到带自动发行说明的 Release。
 
-本地分支执行 `npm run verify-release` 只检查版本文件一致性；GitHub 的 Tag 环境还会额外检查 Tag 名，避免普通分支名被误当成版本号。
+本地分支执行 `npm run verify-release` 检查版本文件一致性、最低 API 版本和描述规范；GitHub 的 Tag 环境还会额外检查 Tag 名，避免普通分支名被误当成版本号。
 
 发布时应保持：
 
@@ -933,18 +943,19 @@ GitHub Actions 分成两条流水线：
 
 | 版本 | 重点 | 状态 |
 | --- | --- | --- |
-| 1.7.2 | 将默认 README 改为完整英文指南，并把详细中文手册独立保留，消除社区目录语言审核警告 | 当前文档与当前代码版本 |
+| 1.7.3 | 精确替换链接、特殊字符与标题解析、后台失败持久重试、目录规则校验应用；最低应用版本纠正为 1.8.7 | 当前文档与当前代码版本 |
+| 1.7.2 | 将默认 README 改为完整英文指南，并把详细中文手册独立保留，消除社区目录语言审核警告 | 历史版本 |
 | 1.7.1 | 修复社区目录审核项，并把官方 Obsidian ESLint 规则和描述规范纳入本地检查及 CI | 历史版本 |
-| 1.7.0 | 四种目录策略、启动补处理、签名下载、历史 URL、事务式路径迁移、版本化延迟删除、三方一致性校对与 CI/Release 防漂移 | 历史版本；因描述规范错误已被社区目录撤下，请升级到 1.7.2 |
+| 1.7.0 | 四种目录策略、启动补处理、签名下载、历史 URL、事务式路径迁移、版本化延迟删除、三方一致性校对与 CI/Release 防漂移 | 历史版本；因描述规范错误已被社区目录撤下，请升级到 1.7.3 |
 | 1.6.9 | 本地镜像孤儿恢复、镜像精确键上传、切换到云端前先上传、Agent/脚本写入后的后台接管 | 历史版本 |
 | 1.6.5–1.6.8 | 云端/镜像规范路径、Obsidian 源码规范、受保护键前缀与路径同步安全边界 | 历史版本 |
 | 1.5.5 | 仓库历史中存在对应版本内容，但此前缺少匹配的 Git Tag / GitHub Release；现已补发历史标签与 Release，`versions.json` 也恢复 `1.5.5 → Obsidian 1.6.6` 兼容映射 | 已补发历史 Release；不作为 Latest |
 
-日常安装请始终使用 [Latest Release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)。补发 1.5.5 只是修复发布历史完整性，不代表它比 1.7.2 更新，也不建议把 1.7.2 降级覆盖成 1.5.5。更完整的技术演进见 [docs/CHANGES.md](docs/CHANGES.md)。
+日常安装请始终使用 [Latest Release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)。补发 1.5.5 只是修复发布历史完整性，不代表它比当前版本更新，也不建议降级覆盖成 1.5.5。更完整的技术演进见 [docs/CHANGES.md](docs/CHANGES.md)。
 
 ## English overview
 
-S3 Image Sync Pro 1.7.2 is an Obsidian plugin for Cloudflare R2, AWS S3, MinIO, and other S3-compatible object stores. It manages three related views of an image: the Markdown reference, the local mirror inside the vault, and the cloud object.
+S3 Image Sync Pro 1.7.3 requires Obsidian 1.8.7 or later. It is a plugin for Cloudflare R2, AWS S3, MinIO, and other S3-compatible object stores. It manages three related views of an image: the Markdown reference, the local mirror inside the vault, and the cloud object.
 
 Its core invariant is:
 
@@ -955,7 +966,7 @@ S3 object key
      or stripped from a local-mirror link
 ```
 
-Cloud vs. Local link mode only changes the link written into Markdown. Every successful upload still creates both the cloud object and the exact local mirror.
+Cloud vs. Local mode selects the written link; ordinary local-image background adoption currently runs only in Cloud mode. Every successful upload still creates both the cloud object and the exact local mirror.
 
 ### Highlights in 1.7.x
 

@@ -15,7 +15,8 @@ import {
   UploadResult,
 } from "./types";
 import { DEFAULT_SETTINGS, getReplacementForExt, mergeSettings } from "./settings";
-import { extractLocalRefs, extractRemoteImageRefs, guessExtFromUrl } from "./link-parser";
+import { extractLocalRefs, extractRemoteImageRefs, guessExtFromUrl, rewriteLinkRefs } from "./link-parser";
+import { replaceRefTarget } from "./utils";
 import {
   putS3Object,
   deleteS3Object,
@@ -110,6 +111,10 @@ export default class S3ImageSyncPlugin extends Plugin {
   private startupCatchupQueue = new Map<string, TFile>();
   private startupCatchupRun: Promise<void> | null = null;
   private settingsSaveQueue = new SerializedAsyncQueue();
+  private disposed = false;
+  private backgroundRuns = new Map<string, Promise<boolean>>();
+  private backgroundRevisions = new Map<string, number>();
+  private backgroundFailures = new Map<string, number>();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -318,6 +323,9 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   onunload(): void {
+    this.disposed = true;
+    // Prevent in-flight writers from passing their normal mutation guards.
+    this.settings.enabled = false;
     if (this.autoScanTimer) window.clearInterval(this.autoScanTimer);
     if (this.deleteQueueTimer) window.clearInterval(this.deleteQueueTimer);
     if (this.startupTimer) window.clearTimeout(this.startupTimer);
@@ -335,6 +343,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.settingsSaveQueue.enqueue(async () => {
+      if (this.disposed) return;
       // Snapshot only when this write reaches the head of the queue. This
       // prevents an older save from landing after a persisted inFlight marker.
       const toSave = JSON.parse(JSON.stringify({
@@ -691,12 +700,8 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   resolveLinkedFile(target: string, noteFile: TFile): TFile | null {
-    let decoded: string;
-    try {
-      decoded = decodeURIComponent(target);
-    } catch {
-      decoded = target;
-    }
+    // extractLocalRefs has already decoded the destination exactly once.
+    const decoded = target;
     const direct = this.app.vault.getAbstractFileByPath(decoded);
     if (direct instanceof TFile) return direct;
     const fromCache = this.app.metadataCache.getFirstLinkpathDest(decoded, noteFile.path);
@@ -794,15 +799,15 @@ export default class S3ImageSyncPlugin extends Plugin {
       }
 
       await this.app.vault.process(noteFile, (current) => {
-        let next = current;
-        for (const [raw, replacement] of replacementMap.entries()) {
-          if (!next.includes(raw)) {
+        const result = rewriteLinkRefs(current, replacementMap);
+        for (const raw of replacementMap.keys()) {
+          if (!result.applied.has(raw)) {
             throw new Error(this.t("originalLinkChanged", { link: raw }));
           }
-          next = replaceAllLiteral(next, raw, replacement);
         }
-        noteChanged = next !== current;
-        return next;
+        replaced = result.count;
+        noteChanged = result.text !== current;
+        return result.text;
       });
     } finally {
       for (const upload of uploaded.values()) this.releaseKeyOperation(upload.operationLockKey);
@@ -811,7 +816,6 @@ export default class S3ImageSyncPlugin extends Plugin {
     if (!noteChanged) return { replaced: 0 };
 
     const localFiles = this.buildLocalFileRecords(candidates, uploaded);
-    for (const candidate of candidates) replaced += candidate.refs.length;
 
     if (trashOriginals && localFiles.length > 0) {
       progress?.({
@@ -1317,13 +1321,7 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     if (mirrorRoot) {
       for (const ref of extractLocalRefs(text)) {
-        let target = ref.target;
-        try {
-          target = decodeURIComponent(target);
-        } catch {
-          // Keep the literal target when percent encoding is malformed.
-        }
-        const key = cloudKeyFromLocalMirrorPath(target, mirrorRoot);
+        const key = cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot);
         if (key) keys.push(key);
       }
     }
@@ -2184,7 +2182,7 @@ export default class S3ImageSyncPlugin extends Plugin {
       const initialTotal = this.startupCatchupQueue.size;
       const notice = new Notice(this.t("startupCatchupWorking", { done: 0, total: initialTotal }), 0);
 
-      while (this.startupCatchupQueue.size > 0) {
+      while (!this.disposed && this.settings.enabled && this.startupCatchupQueue.size > 0) {
         let path: string | undefined;
         for (const queuedPath of this.startupCatchupQueue.keys()) {
           path = queuedPath;
@@ -2204,9 +2202,6 @@ export default class S3ImageSyncPlugin extends Plugin {
         const succeeded = await this.autoTransferRemoteForFile(current, true);
         if (succeeded) {
           processed++;
-          this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths
-            .filter((candidate) => candidate !== path);
-          await this.saveSettings();
         } else {
           failed++;
         }
@@ -2289,7 +2284,7 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   private async initializeRuntimeState(): Promise<void> {
-    if (this.runtimeInitialized || this.runtimeInitializing) return;
+    if (this.disposed || this.runtimeInitialized || this.runtimeInitializing) return;
     this.runtimeInitializing = true;
     try {
       let attempts = 0;
@@ -2301,6 +2296,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         attempts++;
       } while (changedDuringScan && attempts < 3);
 
+      if (this.disposed) return;
       if (changedDuringScan) throw new Error("Vault kept changing during startup indexing");
       this.runtimeInitialized = true;
       if (this.settings.enabled) {
@@ -2308,11 +2304,12 @@ export default class S3ImageSyncPlugin extends Plugin {
         await this.startupPathIntegrityCheck();
       }
       await this.processPendingDeletes(false);
-      if (!this.isMobile && !this.deleteQueueTimer) {
+      if (!this.disposed && !this.isMobile && !this.deleteQueueTimer) {
         this.deleteQueueTimer = window.setInterval(() => void this.processPendingDeletes(false), 60_000);
       }
     } catch {
       this.runtimeInitialized = false;
+      if (this.disposed) return;
       this.startupTimer = window.setTimeout(() => {
         this.startupTimer = null;
         void this.initializeRuntimeState();
@@ -2498,6 +2495,7 @@ export default class S3ImageSyncPlugin extends Plugin {
     let replaced = 0;
     const total = candidates.length;
     let completed = 0;
+    let failed = 0;
     const heldLocks: string[] = [];
 
     try {
@@ -2533,18 +2531,21 @@ export default class S3ImageSyncPlugin extends Plugin {
           ? result.localPath.split("/").map(encodeURIComponent).join("/") 
           : result.publicUrl;
         for (const ref of candidate.refs) {
-          const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${targetUrl})`;
+          const newMarkdown = ref.destinationStart === undefined
+            ? `![${escapeMarkdownLabel(ref.alt || originalName)}](${targetUrl})`
+            : replaceRefTarget(ref, targetUrl);
           replacementMap.set(ref.raw, newMarkdown);
         }
         completed++;
       } catch (error: unknown) {
         new Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
         completed++;
+        failed++;
         // Continue with other candidates
       }
       }
 
-      if (replacementMap.size === 0) return { replaced: 0 };
+      if (replacementMap.size === 0) return { replaced: 0, failed };
 
       if (!this.settings.enabled || !canMutate(this.getNotePathMode(noteFile.path))) {
         throw new Error(this.t("pathNoLongerManaged"));
@@ -2558,14 +2559,10 @@ export default class S3ImageSyncPlugin extends Plugin {
       });
 
       await this.app.vault.process(noteFile, (current) => {
-        let next = current;
-        for (const [raw, replacement] of replacementMap.entries()) {
-          if (next.includes(raw)) {
-            next = replaceAllLiteral(next, raw, replacement);
-            replaced++;
-          }
-        }
-        return next;
+        const result = rewriteLinkRefs(current, replacementMap);
+        replaced = result.count;
+        failed += [...replacementMap.keys()].filter((raw) => !result.applied.has(raw)).length;
+        return result.text;
       });
 
       progress?.({
@@ -2575,7 +2572,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         label: this.t("phaseDone"),
       });
 
-      return { replaced };
+      return { replaced, failed };
     } finally {
       for (const key of heldLocks) this.releaseKeyOperation(key);
     }
@@ -2583,16 +2580,27 @@ export default class S3ImageSyncPlugin extends Plugin {
 
   private remoteTransferDebounceTimers = new Map<string, number>();
 
-  private scheduleBackgroundImageSync(file: TFile): void {
-    if (!this.settings.enabled || this.isIgnoredNote(file)) return;
+  private scheduleBackgroundImageSync(file: TFile, delay = 5000, recordChange = true): void {
+    if (this.disposed || !this.settings.enabled || this.isIgnoredNote(file)) return;
     if (!this.settings.autoTransferRemoteImages && this.settings.linkMode !== "cloud") return;
+
+    if (recordChange) {
+      this.backgroundRevisions.set(file.path, (this.backgroundRevisions.get(file.path) || 0) + 1);
+    }
+    if (!this.settings.startupCatchupPendingPaths.includes(file.path)) {
+      this.settings.startupCatchupPendingPaths.push(file.path);
+    }
+    // Persist intent before waiting for debounce; an observed mtime is not success.
+    void this.saveSettings().catch(() => {
+      this.addLog({ status: "sync-intent-save-failed", notePath: file.path, sourcePath: "", remoteUrl: "" });
+    });
 
     const existing = this.remoteTransferDebounceTimers.get(file.path);
     if (existing) window.clearTimeout(existing);
     const timer = window.setTimeout(() => {
       this.remoteTransferDebounceTimers.delete(file.path);
       void this.autoTransferRemoteForFile(file);
-    }, 5000);
+    }, delay);
     this.remoteTransferDebounceTimers.set(file.path, timer);
   }
 
@@ -2621,7 +2629,42 @@ export default class S3ImageSyncPlugin extends Plugin {
   }
 
   private async autoTransferRemoteForFile(file: TFile, silent = false): Promise<boolean> {
-    if (!this.settings.enabled || !canMutate(this.getNotePathMode(file.path))) return true;
+    if (this.disposed || !this.settings.enabled || !canMutate(this.getNotePathMode(file.path))) return false;
+    const path = file.path;
+    const existing = this.backgroundRuns.get(path);
+    if (existing) return existing;
+    if (!this.settings.startupCatchupPendingPaths.includes(path)) this.settings.startupCatchupPendingPaths.push(path);
+    const revision = this.backgroundRevisions.get(path) || 0;
+    const run = (async (): Promise<boolean> => {
+      try {
+        await this.saveSettings();
+        if (this.disposed || !this.settings.enabled) return false;
+        const succeeded = await this.performBackgroundImageSync(file, silent);
+        if (succeeded && !this.disposed && file.path === path &&
+          revision === (this.backgroundRevisions.get(path) || 0)) {
+          this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths.filter((value) => value !== path);
+          await this.saveSettings();
+          this.backgroundFailures.delete(path);
+          return true;
+        }
+      } catch {
+        this.addLog({ status: "background-sync-incomplete", notePath: path, sourcePath: "", remoteUrl: "" });
+      }
+      if (!this.disposed && file.path === path && !this.remoteTransferDebounceTimers.has(path)) {
+        const failures = Math.min(7, (this.backgroundFailures.get(path) || 0) + 1);
+        this.backgroundFailures.set(path, failures);
+        this.scheduleBackgroundImageSync(file, Math.min(3_600_000, 60_000 * 2 ** (failures - 1)), false);
+      }
+      return false;
+    })();
+    this.backgroundRuns.set(path, run);
+    try { return await run; } finally {
+      if (this.backgroundRuns.get(path) === run) this.backgroundRuns.delete(path);
+    }
+  }
+
+  private async performBackgroundImageSync(file: TFile, silent: boolean): Promise<boolean> {
+    if (this.disposed || !this.settings.enabled || !canMutate(this.getNotePathMode(file.path))) return false;
     try {
       this.ensureS3Settings();
     } catch { return false; }
@@ -2646,6 +2689,7 @@ export default class S3ImageSyncPlugin extends Plugin {
         const candidates = await this.findRemoteCandidatesInNote(file);
         if (candidates.length > 0) {
           const result = await this.transferRemoteImagesInNote(file, candidates);
+          if (result.failed) return false;
           if (!silent && result.replaced > 0) {
             new Notice(this.t("remoteTransferNotice", { count: result.replaced }));
           }
@@ -2653,7 +2697,8 @@ export default class S3ImageSyncPlugin extends Plugin {
       }
 
       if (this.settings.syncS3OnNoteMove && this.usesCanonicalNotePathTemplate()) {
-        await this.syncS3PathsForNote(file, file.path, false);
+        const result = await this.syncS3PathsForNote(file, file.path, false);
+        if (result.failed) return false;
       }
       await this.cacheRemoteUrls(file);
       const snapshot = this.settings.noteSyncIndex[file.path];
@@ -2730,20 +2775,19 @@ export default class S3ImageSyncPlugin extends Plugin {
 
     let changed = 0;
     await this.app.vault.process(noteFile, (content) => {
-      let next = content;
+      const replacements = new Map<string, string>();
       for (const ref of extractRemoteImageRefs(content)) {
         const cloudKey = this.remoteUrlToS3Key(ref.url);
         if (!cloudKey) continue;
         const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
-        if (!localFile || !next.includes(ref.raw)) continue;
-        const labelEnd = ref.raw.indexOf("](");
-        if (labelEnd < 0) continue;
+        if (!localFile) continue;
         const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
-        next = replaceAllLiteral(next, ref.raw, `${ref.raw.slice(0, labelEnd + 1)}(${encodedLocal})`);
-        changed++;
+        replacements.set(ref.raw, replaceRefTarget(ref, encodedLocal));
       }
 
-      return next;
+      const result = rewriteLinkRefs(content, replacements);
+      changed = result.count;
+      return result.text;
     });
 
     return changed;
@@ -2936,7 +2980,20 @@ export default class S3ImageSyncPlugin extends Plugin {
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
 
   private async syncS3PathsOnRename(file: TFile, oldPath: string): Promise<void> {
+    if (this.disposed || !this.settings.enabled) return;
+    const path = file.path;
+    const revision = this.backgroundRevisions.get(path) || 0;
+    if (!this.settings.startupCatchupPendingPaths.includes(path)) this.settings.startupCatchupPendingPaths.push(path);
+    await this.saveSettings();
+    this.ensureS3Settings();
     const result = await this.syncS3PathsForNote(file, oldPath, false);
+    if (result.failed === 0 && !this.disposed && this.settings.enabled && file.path === path &&
+      revision === (this.backgroundRevisions.get(path) || 0)) {
+      this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths.filter((value) => value !== path);
+      await this.saveSettings();
+    } else {
+      this.scheduleBackgroundImageSync(file, 60_000, false);
+    }
     if (result.fixed > 0) new Notice(this.t("s3PathSynced", { count: result.fixed }));
   }
 
@@ -2953,45 +3010,25 @@ export default class S3ImageSyncPlugin extends Plugin {
       replacements.set(oldValue, newValue);
       owners.set(oldValue, oldKey);
     };
-    const oldUrl = buildPublicUrl(
-      context.s3.customDomainName,
-      context.s3.endpoint,
-      context.s3.bucketName,
-      oldKey
-    );
     const newUrl = buildPublicUrl(
       context.s3.customDomainName,
       context.s3.endpoint,
       context.s3.bucketName,
       newKey
     );
-    add(oldUrl, newUrl);
     for (const ref of extractRemoteImageRefs(noteText)) {
       if (this.remoteUrlToS3Key(ref.url) === oldKey) {
-        add(ref.url, newUrl);
+        add(ref.raw, replaceRefTarget(ref, newUrl));
       }
     }
     const oldLocalPath = this.getLocalMirrorPathForCloudKey(oldKey, context.mirrorRoot);
     const newLocalPath = this.getLocalMirrorPathForCloudKey(newKey, context.mirrorRoot);
     if (!oldLocalPath || !newLocalPath) return;
-    add(oldLocalPath, newLocalPath);
-    add(
-      oldLocalPath.split("/").map(encodeURIComponent).join("/"),
-      newLocalPath.split("/").map(encodeURIComponent).join("/")
-    );
     const mirrorRoot = trimSlashes(context.mirrorRoot || "98 cloudflareR2");
     for (const ref of extractLocalRefs(noteText)) {
-      let decodedTarget = ref.target;
-      try {
-        decodedTarget = decodeURIComponent(ref.target);
-      } catch {
-        // Keep the literal target.
-      }
-      if (cloudKeyFromLocalMirrorPath(decodedTarget, mirrorRoot) !== oldKey) continue;
-      const target = ref.target.includes("%")
-        ? newLocalPath.split("/").map(encodeURIComponent).join("/")
-        : newLocalPath;
-      add(ref.target, target);
+      if (cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot) !== oldKey) continue;
+      const target = newLocalPath.split("/").map(encodeURIComponent).join("/");
+      add(ref.raw, replaceRefTarget(ref, ref.fragment ? `${target}#${encodeURIComponent(ref.fragment)}` : target));
     }
   }
 
@@ -3196,14 +3233,12 @@ export default class S3ImageSyncPlugin extends Plugin {
         if (!this.isPathMigrationContextCurrent(context, file)) {
           throw new Error(this.t("pathNoLongerManaged"));
         }
-        let next = content;
-        for (const [oldValue, newValue] of replacements) {
-          if (!next.includes(oldValue)) continue;
-          next = replaceAllLiteral(next, oldValue, newValue);
+        const result = rewriteLinkRefs(content, replacements);
+        for (const oldValue of result.applied) {
           const owner = replacementOwners.get(oldValue);
           if (owner) appliedOldKeys.add(owner);
         }
-        return next;
+        return result.text;
       });
 
       if (!this.isPathMigrationContextCurrent(context, file)) {

@@ -226,6 +226,15 @@ export function escapeMarkdownLabel(label: string): string {
   return String(label || "attachment").replace(/\]/g, "\\]");
 }
 
+/** Replace only the destination, retaining Markdown titles, aliases and spacing. */
+export function replaceRefTarget(
+  ref: { raw: string; destinationStart?: number; destinationEnd?: number },
+  target: string
+): string {
+  if (ref.destinationStart === undefined || ref.destinationEnd === undefined) return ref.raw;
+  return ref.raw.slice(0, ref.destinationStart) + target + ref.raw.slice(ref.destinationEnd);
+}
+
 export function buildLinkReplacement(
   ref: LocalRef,
   replacement: ReplacementType,
@@ -235,6 +244,13 @@ export function buildLinkReplacement(
     ? `${targetUrl}#${encodeURIComponent(ref.fragment)}`
     : targetUrl;
   const label = escapeMarkdownLabel(ref.label || basename(ref.target));
+
+  if ((ref.kind === "markdown" || ref.kind === "markdown-embed") &&
+    (replacement === "image" || replacement === "markdown") && ref.destinationStart !== undefined) {
+    const updated = replaceRefTarget(ref, url);
+    if (replacement === "markdown" && ref.kind === "markdown-embed") return updated.slice(1);
+    return replacement === "image" && ref.kind === "markdown" ? `!${updated}` : updated;
+  }
 
   if (replacement === "image") return `![${label}](${url})`;
   if (replacement === "video") return `<video src="${url}" controls></video>`;

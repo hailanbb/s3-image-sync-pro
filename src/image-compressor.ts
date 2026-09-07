@@ -1,10 +1,8 @@
 /**
  * Image compression module using @jsquash WASM codecs.
  *
- * Strategy: Read WASM binaries from the plugin directory at runtime
- * using Node.js fs, then manually initialize the WASM modules via
- * WebAssembly.compile(). This avoids import.meta.url issues in
- * Obsidian's CJS bundle environment.
+ * WASM bytes are embedded by esbuild and initialized lazily through Web APIs.
+ * No runtime filesystem access or codec download is required.
  */
 import { init as initWebpEnc, default as encodeWebp } from "@jsquash/webp/encode";
 import type { EncodeOptions } from "@jsquash/webp/meta";

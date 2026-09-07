@@ -2,6 +2,17 @@
 
 本文件用于记录重大的系统重构、踩坑解决记录以及核心功能上线的重大里程碑，以便接手人员追溯系统演进历史。
 
+## 2026-09-07 (v1.7.3): reliable link rewrites and durable background work
+
+- Replace only freshly parsed link spans in uploads, remote transfers, toggles and path migration; preserve code examples and Markdown titles.
+- Parse balanced/escaped parentheses, angle destinations, encoded `#`, literal percent signs and fragments without double decoding.
+- Persist background intent before upload; retain failures and partial transfers, coalesce concurrent work per note, and protect newer edits from stale completion. Retry eligible background failures with bounded backoff.
+- Validate directory rule drafts on explicit application. Preserve existing processing scope and deletion defaults.
+- Correct minimum Obsidian version to 1.8.7 for the public `getLanguage()` API; enforce this floor in release validation.
+- Add deterministic plugin-callback/fault-injection regression tests and correct English/Chinese safety documentation.
+- Update the development-only `brace-expansion` dependency within existing version constraints to address DoS advisories; track the unused esbuild development-server advisory separately.
+- Scope and remaining limitations: [RELIABILITY-1.7.3.md](RELIABILITY-1.7.3.md).
+
 ## 2026-08-31 (v1.7.2): English community README
 
 - Replaced the repository's default README with a complete English setup, usage, safety, and troubleshooting guide for the primarily English-speaking community directory.

@@ -113,6 +113,8 @@ export interface LocalRef {
   target: string;
   fragment: string;
   label: string;
+  destinationStart?: number;
+  destinationEnd?: number;
 }
 
 export interface RemoteImageRef {
@@ -121,6 +123,8 @@ export interface RemoteImageRef {
   end: number;
   url: string;
   alt: string;
+  destinationStart?: number;
+  destinationEnd?: number;
 }
 
 export interface RemoteCandidate {
@@ -176,6 +180,7 @@ export interface LocalFileRecord {
 
 export interface ReplaceResult {
   replaced: number;
+  failed?: number;
   localFiles?: LocalFileRecord[];
 }
 

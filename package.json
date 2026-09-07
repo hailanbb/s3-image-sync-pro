@@ -1,12 +1,12 @@
 {
   "name": "s3-image-sync-pro",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "description": "Keep image links, a local mirror, and S3/R2 objects consistent with safe directory policies and audits.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production",
-    "test": "node tests/path-sync.test.cjs && node tests/settings-identity.test.cjs && node tests/s3-audit.test.cjs",
+    "test": "node tests/path-sync.test.cjs && node tests/settings-identity.test.cjs && node tests/s3-audit.test.cjs && node tests/reliability.test.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "verify-release": "node scripts/validate-release.mjs"
