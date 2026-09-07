@@ -8,9 +8,17 @@ Keep Markdown image links, a local mirror inside your vault, and S3-compatible c
 
 [Chinese guide](README.zh-CN.md) · [Latest release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest) · [Report an issue](https://github.com/hailanbb/s3-image-sync-pro/issues) · [Architecture changes](docs/CHANGES.md)
 
-This guide describes version **1.7.3**. It starts with the safest beginner setup, then explains directory policies, link modes, note moves, deletion safeguards, audits, and troubleshooting.
+This guide describes version **1.8.0**. It starts with the safest beginner setup, then explains directory policies, link modes, note moves, deletion safeguards, audits, and troubleshooting.
 
 ## What the plugin does
+
+### Safe mirror restore: 1.8.0
+
+The cloud-to-local download command now opens a **read-only preview**, not an immediate overwrite operation. Review missing files, identical files, conflicts and failures, then choose **Restore missing files only**. Existing files are never overwritten by this command. Switching to Local also requires the exact cloud-key path, including its extension; a same-stem PNG is not a substitute for a missing WebP.
+
+The preview reads full cloud image bodies and hashes actual bytes, even when metadata is absent. This consumes network traffic and may incur provider charges. Restore fetches missing bodies again and refuses them if their content changed since preview. Configuration changes, disabling the plugin, Cancel or closing the window stop further work at checkpoints; a dispatched request/write may finish. Completed files are retained.
+
+Results are paginated (50 per page). Confirmation applies to **all** missing entries, not only the visible page. **Copy full report** includes private note paths and status/failure codes, but no configuration, credentials or raw service error responses. This command only restores keys referenced by eligible `staging`/`managed` notes; it is not a bucket backup, path repair or conflict overwrite tool. See [scope, validation and limitations](docs/MIRROR-RESTORE-1.8.0.md).
 
 ### Reliability update: 1.7.3
 
@@ -289,6 +297,8 @@ Switch supported links in the current note or selected scope between Cloud and L
 
 Read supported cloud objects through authenticated S3 GET requests and write them under the exact relative key inside the configured mirror root. This is useful before changing the default display mode to Local.
 
+In 1.8.0, opening this command performs a read-only preview first. Review the paginated results, then select **Restore missing files only**. Identical files and conflicts are both preserved; there is no overwrite option. Changed cloud content, newly created local files and changed references are not silently accepted after preview. Cancel/close stops subsequent work, and **Copy full report** exports the result to your clipboard on request. See [the safety and traffic notes above](#safe-mirror-restore-180).
+
 ### Re-sync all S3 image paths
 
 This is a mutation command for managed notes. It compares each recognized link with the key expected from the current note path, then performs the safe migration sequence.
@@ -431,6 +441,7 @@ GitHub Actions runs tests, type checking, official lint rules, metadata validati
 
 | Version | Summary |
 | --- | --- |
+| 1.8.0 | Read-only mirror download preview, create-only restore, cancellation, paginated reports, configuration/ref checks, and exact-extension local links |
 | 1.7.3 | Exact link-span rewrites, special-character/title parsing, durable background retries, validated rule application, and corrected minimum app version (1.8.7) |
 | 1.7.2 | Complete English community README with the detailed Chinese manual preserved separately |
 | 1.7.1 | Community-review source fixes and official review lint rules in local development and CI |
