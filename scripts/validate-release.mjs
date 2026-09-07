@@ -13,6 +13,13 @@ const [pkg, lock, manifest, versions] = await Promise.all([
 
 const version = String(manifest.version || "");
 const errors = [];
+const minimum = String(manifest.minAppVersion || "").split(".").map(Number);
+const supportedMinimum = [1, 8, 7]; // getLanguage() is used during plugin load.
+const firstDifference = supportedMinimum.findIndex((part, index) => minimum[index] !== part);
+if (minimum.length !== 3 || minimum.some((part) => !Number.isInteger(part) || part < 0) ||
+    (firstDifference !== -1 && minimum[firstDifference] < supportedMinimum[firstDifference])) {
+  errors.push("minAppVersion must be at least 1.8.7 for getLanguage()");
+}
 if (!/^\d+\.\d+\.\d+$/.test(version)) errors.push(`Invalid manifest version: ${version}`);
 const description = String(manifest.description || "");
 if (/obsidian/i.test(description)) {

@@ -4,7 +4,7 @@ import { FILE_CATEGORIES } from "./file-categories";
 import { FileCategory, S3Provider, S3Config } from "./types";
 import { debounce } from "./utils";
 import { supportsAtomicConditionalDelete, testS3Connection } from "./s3-client";
-import { formatPathPolicyLines, parsePathPolicyLines } from "./path-policy";
+import { formatPathPolicyLines, parsePathPolicyLines, invalidPathPolicyLines } from "./path-policy";
 
 const CATEGORY_ICONS: Record<string, string> = {
   image: "\ud83d\udcf7",
@@ -331,6 +331,7 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
       );
 
     if (this.plugin.settings.processingScopeMode === "policy") {
+      let policyDraft = formatPathPolicyLines(this.plugin.settings.pathPolicies);
       new Setting(containerEl)
         .setName(t("pathPolicies"))
         .setDesc(t("pathPoliciesDesc"))
@@ -339,10 +340,19 @@ export class S3ImageSyncSettingTab extends PluginSettingTab {
             .setPlaceholder(t("pathPoliciesPlaceholder"))
             .setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies))
             .onChange((value) => {
-              this.plugin.settings.pathPolicies = parsePathPolicyLines(value);
-              void save();
+              policyDraft = value;
             })
-        );
+        )
+        .addButton((button) => button.setButtonText(t("applyPathPolicies")).onClick(async () => {
+          const invalid = invalidPathPolicyLines(policyDraft);
+          if (invalid.length) {
+            new Notice(t("invalidPathPolicies", { lines: invalid.join(", ") }));
+            return;
+          }
+          this.plugin.settings.pathPolicies = parsePathPolicyLines(policyDraft);
+          await save();
+          new Notice(t("pathPoliciesApplied"));
+        }));
     } else {
       new Setting(containerEl)
         .setName(t("excludedNotePaths"))

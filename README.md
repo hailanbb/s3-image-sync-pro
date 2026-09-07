@@ -1,16 +1,26 @@
 # S3 Image Sync Pro
 
 [![GitHub release](https://img.shields.io/github/v/release/hailanbb/s3-image-sync-pro?display_name=tag&sort=semver)](https://github.com/hailanbb/s3-image-sync-pro/releases/latest)
-[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.6.6-7C3AED)](https://obsidian.md/)
+[![Obsidian](https://img.shields.io/badge/Obsidian-%E2%89%A5%201.8.7-7C3AED)](https://obsidian.md/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 Keep Markdown image links, a local mirror inside your vault, and S3-compatible cloud objects aligned.
 
 [Chinese guide](README.zh-CN.md) · [Latest release](https://github.com/hailanbb/s3-image-sync-pro/releases/latest) · [Report an issue](https://github.com/hailanbb/s3-image-sync-pro/issues) · [Architecture changes](docs/CHANGES.md)
 
-This guide describes version **1.7.2**. It starts with the safest beginner setup, then explains directory policies, link modes, note moves, deletion safeguards, audits, and troubleshooting.
+This guide describes version **1.7.3**. It starts with the safest beginner setup, then explains directory policies, link modes, note moves, deletion safeguards, audits, and troubleshooting.
 
 ## What the plugin does
+
+### Reliability update: 1.7.3
+
+- Back up your vault and plugin settings, and update Obsidian to **1.8.7 or later** before upgrading. Historical compatibility entries are preserved as release history, not re-certified old builds.
+- Link rewrites now reparse the latest note and modify only recognized link spans. Matching text in fenced code, inline code and HTML comments is left unchanged. Encoded `#`, literal percent signs, nested parentheses and optional Markdown titles are handled without double decoding.
+- Background work is persisted before execution; failures remain pending across restart. Eligible live background work retries with backoff from one minute up to one hour. Concurrent work on the same note is coalesced; a newer edit cannot be acknowledged by an older run. Partial remote transfers remain pending.
+- Directory-rule text is a draft until **Apply rules** is clicked. Invalid lines are reported and leave the current rules unchanged. Empty rules intentionally mean no matched directories in policy mode. This release does not silently change existing directory modes or deletion settings.
+- This is not full CommonMark or Excalidraw support. Reference-style images, arbitrary HTML and third-party drawing data remain outside the supported format contract. Unsupported references must not be treated as permission to delete.
+
+See [the implementation, validation and remaining roadmap](docs/RELIABILITY-1.7.3.md). The large-vault audit redesign and Excalidraw integration are not included in this patch.
 
 S3 Image Sync Pro manages three related forms of each supported image:
 
@@ -39,7 +49,7 @@ Local mirror:
 98 cloudflareR2/06 Archive/Projects/Example/photo.webp
 ```
 
-The selected link mode changes only the link written in Markdown. A successful upload always keeps the exact local mirror, including when the default link mode is **Cloud**.
+Every successful upload keeps both the cloud object and the exact local mirror, including in **Cloud** mode. Link mode selects the written link, but also currently controls background adoption: ordinary local images are adopted automatically in Cloud mode, not in Local mode. Paste/drop and manual upload remain separate triggers.
 
 ## Main features
 
@@ -70,7 +80,7 @@ Read these points before using the plugin on an existing vault:
 
 ## Requirements
 
-- Obsidian 1.6.6 or later.
+- Obsidian 1.8.7 or later (the plugin uses the public `getLanguage()` API).
 - An S3-compatible bucket and credentials if cloud features are used.
 - A browser-readable public URL or custom domain if notes should display Cloud links directly.
 - Desktop or mobile is supported by the manifest, but test provider-specific behavior on your devices before relying on automation.
@@ -421,6 +431,7 @@ GitHub Actions runs tests, type checking, official lint rules, metadata validati
 
 | Version | Summary |
 | --- | --- |
+| 1.7.3 | Exact link-span rewrites, special-character/title parsing, durable background retries, validated rule application, and corrected minimum app version (1.8.7) |
 | 1.7.2 | Complete English community README with the detailed Chinese manual preserved separately |
 | 1.7.1 | Community-review source fixes and official review lint rules in local development and CI |
 | 1.7.0 | Directory policies, startup catch-up, signed downloads, transactional path migration, delayed deletion safeguards, and three-way audits |

@@ -3198,9 +3198,20 @@ function replaceAllLiteral(text, search, replacement) {
 function escapeMarkdownLabel(label) {
   return String(label || "attachment").replace(/\]/g, "\\]");
 }
+function replaceRefTarget(ref, target) {
+  if (ref.destinationStart === void 0 || ref.destinationEnd === void 0)
+    return ref.raw;
+  return ref.raw.slice(0, ref.destinationStart) + target + ref.raw.slice(ref.destinationEnd);
+}
 function buildLinkReplacement(ref, replacement, targetUrl) {
   const url = ref.fragment ? `${targetUrl}#${encodeURIComponent(ref.fragment)}` : targetUrl;
   const label = escapeMarkdownLabel(ref.label || basename(ref.target));
+  if ((ref.kind === "markdown" || ref.kind === "markdown-embed") && (replacement === "image" || replacement === "markdown") && ref.destinationStart !== void 0) {
+    const updated = replaceRefTarget(ref, url);
+    if (replacement === "markdown" && ref.kind === "markdown-embed")
+      return updated.slice(1);
+    return replacement === "image" && ref.kind === "markdown" ? `!${updated}` : updated;
+  }
   if (replacement === "image")
     return `![${label}](${url})`;
   if (replacement === "video")
@@ -3489,12 +3500,6 @@ function getReplacementForExt(ext, settings) {
 }
 
 // src/link-parser.ts
-function splitFragment(path) {
-  const hashIndex = path.indexOf("#");
-  if (hashIndex === -1)
-    return { path, fragment: "" };
-  return { path: path.slice(0, hashIndex), fragment: path.slice(hashIndex + 1) };
-}
 function decodeLinkPath(path) {
   try {
     return decodeURIComponent(path);
@@ -3502,72 +3507,198 @@ function decodeLinkPath(path) {
     return path;
   }
 }
-function basename2(path) {
-  return String(path || "").split("/").pop() || path;
+function splitFragment(value) {
+  const index = value.indexOf("#");
+  return {
+    path: decodeLinkPath(index < 0 ? value : value.slice(0, index)),
+    fragment: index < 0 ? "" : decodeLinkPath(value.slice(index + 1))
+  };
+}
+function escaped(text, index) {
+  let count = 0;
+  while (index > 0 && text[--index] === "\\")
+    count++;
+  return count % 2 === 1;
+}
+function inRegion(pos, regions) {
+  return regions.some(([start, end]) => pos >= start && pos < end);
 }
 function findCodeRegions(text) {
   const regions = [];
-  const fenced = /^(`{3,}|~{3,}).*?\n[\s\S]*?^\1/gm;
-  let m;
-  while ((m = fenced.exec(text)) !== null) {
-    regions.push([m.index, m.index + m[0].length]);
+  let fence;
+  const lines = /^.*(?:\n|$)/gm;
+  let line;
+  while ((line = lines.exec(text)) && line[0]) {
+    const marker = /^ {0,3}([\x60]{3,}|~{3,})(.*)\r?\n?$/.exec(line[0]);
+    if (!marker)
+      continue;
+    if (!fence) {
+      fence = { start: line.index, char: marker[1][0], length: marker[1].length };
+    } else if (marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) {
+      regions.push([fence.start, line.index + line[0].length]);
+      fence = void 0;
+    }
   }
-  const inline = /(`+)([\s\S]+?)\1/g;
-  while ((m = inline.exec(text)) !== null) {
-    regions.push([m.index, m.index + m[0].length]);
+  if (fence)
+    regions.push([fence.start, text.length]);
+  const inline = /[\x60]+/g;
+  let run;
+  while (run = inline.exec(text)) {
+    if (inRegion(run.index, regions) || escaped(text, run.index))
+      continue;
+    const closing = /[\x60]+/g;
+    closing.lastIndex = inline.lastIndex;
+    let end;
+    while (end = closing.exec(text)) {
+      if (end[0].length !== run[0].length)
+        continue;
+      regions.push([run.index, closing.lastIndex]);
+      inline.lastIndex = closing.lastIndex;
+      break;
+    }
   }
+  const comments = /<!--[\s\S]*?(?:-->|$)/g;
+  let comment;
+  while (comment = comments.exec(text))
+    regions.push([comment.index, comments.lastIndex]);
   return regions;
 }
-function isInCodeRegion(pos, regions) {
-  for (const [start, end] of regions) {
-    if (pos >= start && pos < end)
-      return true;
+function markdownRefs(text, regions) {
+  const refs = [];
+  const opening = /!?\[/g;
+  let match;
+  while (match = opening.exec(text)) {
+    const start = match.index;
+    if (escaped(text, start) || inRegion(start, regions))
+      continue;
+    const labelStart = opening.lastIndex;
+    if (text[labelStart] === "[" || text[start - 1] === "[")
+      continue;
+    let labelEnd = labelStart;
+    let depth = 1;
+    for (; labelEnd < text.length; labelEnd++) {
+      const char = text[labelEnd];
+      if (char === "\n")
+        break;
+      if (escaped(text, labelEnd))
+        continue;
+      if (char === "[")
+        depth++;
+      if (char === "]") {
+        depth--;
+        if (depth === 0)
+          break;
+      }
+    }
+    if (depth !== 0 || text[labelEnd + 1] !== "(")
+      continue;
+    const bodyStart = labelEnd + 2;
+    let end = bodyStart;
+    let parentheses = 1;
+    let quote = "";
+    let angle = false;
+    for (; end < text.length; end++) {
+      const char = text[end];
+      if (char === "\n" || char === "\r")
+        break;
+      if (escaped(text, end))
+        continue;
+      if (quote) {
+        if (char === quote)
+          quote = "";
+        continue;
+      }
+      if (angle) {
+        if (char === ">")
+          angle = false;
+        continue;
+      }
+      if (char === "<" && !text.slice(bodyStart, end).trim()) {
+        angle = true;
+        continue;
+      }
+      if ((char === '"' || char === "'") && /\s/.test(text[end - 1] || "")) {
+        quote = char;
+        continue;
+      }
+      if (char === "(")
+        parentheses++;
+      if (char === ")") {
+        parentheses--;
+        if (parentheses === 0)
+          break;
+      }
+    }
+    if (parentheses !== 0)
+      continue;
+    const body = text.slice(bodyStart, end);
+    const trimmed = body.trim();
+    let offset = bodyStart + body.length - body.trimStart().length;
+    let href;
+    if (trimmed.startsWith("<")) {
+      const close = trimmed.indexOf(">");
+      if (close < 0)
+        continue;
+      href = trimmed.slice(1, close);
+      offset++;
+    } else {
+      href = trimmed.replace(/\s+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\([^()]*\))\s*$/, "");
+    }
+    if (!href)
+      continue;
+    refs.push({
+      raw: text.slice(start, end + 1),
+      start,
+      end: end + 1,
+      destinationStart: offset - start,
+      destinationEnd: offset - start + href.length,
+      href: href.replace(/\\([\\()[\]<> ])/g, "$1"),
+      label: text.slice(labelStart, labelEnd),
+      embed: match[0].startsWith("!")
+    });
+    opening.lastIndex = end + 1;
   }
-  return false;
+  return refs;
 }
 function extractLocalRefs(text) {
   const refs = [];
-  const codeRegions = findCodeRegions(text);
+  const regions = findCodeRegions(text);
   const wiki = /!?\[\[([^\]\n]+?)\]\]/g;
   let match;
-  while ((match = wiki.exec(text)) !== null) {
-    if (isInCodeRegion(match.index, codeRegions))
+  while (match = wiki.exec(text)) {
+    if (escaped(text, match.index) || inRegion(match.index, regions))
       continue;
-    const raw = match[0];
     const inner = match[1];
-    const pipeIndex = inner.indexOf("|");
-    const targetPart = pipeIndex >= 0 ? inner.slice(0, pipeIndex) : inner;
-    const alias = pipeIndex >= 0 ? inner.slice(pipeIndex + 1) : "";
-    const parsed = splitFragment(decodeLinkPath(targetPart.trim()));
+    const pipe = inner.indexOf("|");
+    const target = (pipe < 0 ? inner : inner.slice(0, pipe)).trim();
+    const parsed = splitFragment(target);
+    const offset = match[0].indexOf("[[") + 2 + inner.indexOf(target);
     refs.push({
-      kind: raw.startsWith("!") ? "wiki-embed" : "wiki",
-      raw,
+      kind: match[0].startsWith("!") ? "wiki-embed" : "wiki",
+      raw: match[0],
       start: match.index,
-      end: match.index + raw.length,
+      end: wiki.lastIndex,
+      destinationStart: offset,
+      destinationEnd: offset + target.length,
       target: parsed.path,
       fragment: parsed.fragment,
-      label: alias || basename2(parsed.path)
+      label: (pipe < 0 ? "" : inner.slice(pipe + 1)) || parsed.path.split("/").pop() || parsed.path
     });
   }
-  const markdown = /!?\[([^\]\n]*)\]\(([^)\n]+)\)/g;
-  while ((match = markdown.exec(text)) !== null) {
-    if (isInCodeRegion(match.index, codeRegions))
+  for (const ref of markdownRefs(text, regions)) {
+    if (/^(?:[a-z][a-z\d+.-]*:|#)/i.test(ref.href))
       continue;
-    const raw = match[0];
-    let href = match[2].trim();
-    if (href.startsWith("<") && href.endsWith(">"))
-      href = href.slice(1, -1);
-    if (/^(https?:|mailto:|obsidian:|#)/i.test(href))
-      continue;
-    const parsed = splitFragment(decodeLinkPath(href));
+    const parsed = splitFragment(ref.href);
     refs.push({
-      kind: raw.startsWith("!") ? "markdown-embed" : "markdown",
-      raw,
-      start: match.index,
-      end: match.index + raw.length,
+      kind: ref.embed ? "markdown-embed" : "markdown",
+      raw: ref.raw,
+      start: ref.start,
+      end: ref.end,
+      destinationStart: ref.destinationStart,
+      destinationEnd: ref.destinationEnd,
       target: parsed.path,
       fragment: parsed.fragment,
-      label: match[1] || basename2(parsed.path)
+      label: ref.label || parsed.path.split("/").pop() || parsed.path
     });
   }
   return refs.sort((a, b) => a.start - b.start);
@@ -3587,31 +3718,35 @@ function guessExtFromUrl(url) {
   return "png";
 }
 function isImageUrl(url) {
-  const ext = guessExtFromUrl(url);
-  return IMAGE_EXTS.has(ext);
+  return IMAGE_EXTS.has(guessExtFromUrl(url));
 }
 function extractRemoteImageRefs(text) {
-  const refs = [];
-  const codeRegions = findCodeRegions(text);
-  const mdImg = /!\[([^\]\n]*)\]\((https?:\/\/[^)\n]+)\)/g;
-  let match;
-  while ((match = mdImg.exec(text)) !== null) {
-    if (isInCodeRegion(match.index, codeRegions))
+  return markdownRefs(text, findCodeRegions(text)).filter((ref) => ref.embed && /^https?:/i.test(ref.href) && isImageUrl(ref.href)).map((ref) => ({
+    raw: ref.raw,
+    start: ref.start,
+    end: ref.end,
+    url: ref.href,
+    alt: ref.label,
+    destinationStart: ref.destinationStart,
+    destinationEnd: ref.destinationEnd
+  }));
+}
+function rewriteLinkRefs(text, replacements) {
+  const refs = [...extractLocalRefs(text), ...extractRemoteImageRefs(text)].sort((a, b) => b.start - a.start);
+  let next = text;
+  let count = 0;
+  let boundary = text.length;
+  const applied = /* @__PURE__ */ new Set();
+  for (const ref of refs) {
+    const replacement = replacements.get(ref.raw);
+    if (replacement === void 0 || replacement === ref.raw || ref.end > boundary)
       continue;
-    const raw = match[0];
-    const alt = match[1];
-    const url = match[2].trim();
-    if (!isImageUrl(url))
-      continue;
-    refs.push({
-      raw,
-      start: match.index,
-      end: match.index + raw.length,
-      url,
-      alt
-    });
+    next = next.slice(0, ref.start) + replacement + next.slice(ref.end);
+    boundary = ref.start;
+    applied.add(ref.raw);
+    count++;
   }
-  return refs.sort((a, b) => a.start - b.start);
+  return { text: next, count, applied };
 }
 
 // src/s3-client.ts
@@ -4550,6 +4685,9 @@ var I18N = {
     processingScopeLegacy: "Legacy exclusions",
     processingScopePolicy: "Directory policies (recommended)",
     pathPolicies: "Directory policy rules",
+    applyPathPolicies: "Apply rules",
+    invalidPathPolicies: "Invalid directory rules on lines {lines}. Existing rules are unchanged.",
+    pathPoliciesApplied: "Directory rules saved. New rules apply to subsequent operations.",
     pathPoliciesDesc: "One rule per line. staging ingests/uploads without path migration; managed also maintains canonical paths; verify is read-only; ignore is protected. Longest match wins and unmatched paths are ignored.",
     pathPoliciesPlaceholder: "staging: 01 Inbox\nmanaged: 06 Archive\nverify: 04 Wiki\nignore: 03 Backup",
     excludedPathSyncKeyPrefixes: "Cloud key prefixes excluded from path sync",
@@ -4804,6 +4942,9 @@ var I18N = {
     processingScopeLegacy: "\u65E7\u7248\u6392\u9664\u76EE\u5F55",
     processingScopePolicy: "\u76EE\u5F55\u7B56\u7565\uFF08\u63A8\u8350\uFF09",
     pathPolicies: "\u76EE\u5F55\u7B56\u7565\u89C4\u5219",
+    applyPathPolicies: "\u5E94\u7528\u89C4\u5219",
+    invalidPathPolicies: "\u7B2C {lines} \u884C\u89C4\u5219\u65E0\u6548\uFF0C\u73B0\u6709\u89C4\u5219\u672A\u4FEE\u6539\u3002",
+    pathPoliciesApplied: "\u76EE\u5F55\u89C4\u5219\u5DF2\u4FDD\u5B58\uFF0C\u540E\u7EED\u64CD\u4F5C\u5C06\u4F7F\u7528\u65B0\u89C4\u5219\u3002",
     pathPoliciesDesc: "\u6BCF\u884C\u4E00\u6761\u3002staging \u8D1F\u8D23\u63A5\u5165\u3001\u4E0A\u4F20\u548C\u5207\u6362\u94FE\u63A5\u4F46\u4E0D\u8FC1\u79FB\u8DEF\u5F84\uFF1Bmanaged \u8FD8\u7EF4\u62A4\u89C4\u8303\u8DEF\u5F84\uFF1Bverify \u53EA\u8BFB\u6821\u5BF9\uFF1Bignore \u5B8C\u5168\u4FDD\u62A4\u3002\u6700\u957F\u5339\u914D\u4F18\u5148\uFF0C\u672A\u5339\u914D\u9ED8\u8BA4\u5FFD\u7565\u3002",
     pathPoliciesPlaceholder: "staging: 01 \u5F85\u9605\u6536\u4EF6\u7BB1\nmanaged: 06 \u5DF2\u5F52\u6863\nverify: 04 wiki\nignore: 03 \u5DF2\u6574\u7406",
     excludedNotePaths: "\u4E0D\u5904\u7406\u7684\u7B14\u8BB0\u8DEF\u5F84",
@@ -5342,6 +5483,11 @@ function parsePathPolicyLines(value) {
   }
   return rules;
 }
+function invalidPathPolicyLines(value) {
+  return value.split(/\r?\n/).flatMap(
+    (line, index) => line.trim() && parsePathPolicyLines(line).length !== 1 ? [index + 1] : []
+  );
+}
 function formatPathPolicyLines(rules) {
   return (rules || []).map(normalizedRule).filter((rule) => rule !== null).map((rule) => `${rule.mode}: ${rule.path || "/"}`).join("\n");
 }
@@ -5567,12 +5713,21 @@ var S3ImageSyncSettingTab = class extends import_obsidian4.PluginSettingTab {
       })
     );
     if (this.plugin.settings.processingScopeMode === "policy") {
+      let policyDraft = formatPathPolicyLines(this.plugin.settings.pathPolicies);
       new import_obsidian4.Setting(containerEl).setName(t2("pathPolicies")).setDesc(t2("pathPoliciesDesc")).addTextArea(
         (text) => text.setPlaceholder(t2("pathPoliciesPlaceholder")).setValue(formatPathPolicyLines(this.plugin.settings.pathPolicies)).onChange((value) => {
-          this.plugin.settings.pathPolicies = parsePathPolicyLines(value);
-          void save();
+          policyDraft = value;
         })
-      );
+      ).addButton((button) => button.setButtonText(t2("applyPathPolicies")).onClick(async () => {
+        const invalid = invalidPathPolicyLines(policyDraft);
+        if (invalid.length) {
+          new import_obsidian4.Notice(t2("invalidPathPolicies", { lines: invalid.join(", ") }));
+          return;
+        }
+        this.plugin.settings.pathPolicies = parsePathPolicyLines(policyDraft);
+        await save();
+        new import_obsidian4.Notice(t2("pathPoliciesApplied"));
+      }));
     } else {
       new import_obsidian4.Setting(containerEl).setName(t2("excludedNotePaths")).setDesc(t2("excludedNotePathsDesc")).addTextArea(
         (text) => text.setPlaceholder("06 \u5DF2\u5F52\u6863").setValue(this.plugin.settings.excludedNotePaths.join("\n")).onChange((value) => {
@@ -6354,6 +6509,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     __publicField(this, "startupCatchupQueue", /* @__PURE__ */ new Map());
     __publicField(this, "startupCatchupRun", null);
     __publicField(this, "settingsSaveQueue", new SerializedAsyncQueue());
+    __publicField(this, "disposed", false);
+    __publicField(this, "backgroundRuns", /* @__PURE__ */ new Map());
+    __publicField(this, "backgroundRevisions", /* @__PURE__ */ new Map());
+    __publicField(this, "backgroundFailures", /* @__PURE__ */ new Map());
     __publicField(this, "settingsSaveTimer", null);
     __publicField(this, "remoteTransferDebounceTimers", /* @__PURE__ */ new Map());
   }
@@ -6521,6 +6680,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     });
   }
   onunload() {
+    this.disposed = true;
+    this.settings.enabled = false;
     if (this.autoScanTimer)
       window.clearInterval(this.autoScanTimer);
     if (this.deleteQueueTimer)
@@ -6540,6 +6701,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
   }
   async saveSettings() {
     await this.settingsSaveQueue.enqueue(async () => {
+      if (this.disposed)
+        return;
       const toSave = JSON.parse(JSON.stringify({
         ...this.settings,
         logs: this.settings.logs.slice(0, 50)
@@ -6876,12 +7039,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     return Array.from(byKey.values()).sort((a, b) => b.sizeBytes - a.sizeBytes);
   }
   resolveLinkedFile(target, noteFile) {
-    let decoded;
-    try {
-      decoded = decodeURIComponent(target);
-    } catch {
-      decoded = target;
-    }
+    const decoded = target;
     const direct = this.app.vault.getAbstractFileByPath(decoded);
     if (direct instanceof import_obsidian7.TFile)
       return direct;
@@ -6969,15 +7127,15 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         }
       }
       await this.app.vault.process(noteFile, (current) => {
-        let next = current;
-        for (const [raw, replacement] of replacementMap.entries()) {
-          if (!next.includes(raw)) {
+        const result = rewriteLinkRefs(current, replacementMap);
+        for (const raw of replacementMap.keys()) {
+          if (!result.applied.has(raw)) {
             throw new Error(this.t("originalLinkChanged", { link: raw }));
           }
-          next = replaceAllLiteral(next, raw, replacement);
         }
-        noteChanged = next !== current;
-        return next;
+        replaced = result.count;
+        noteChanged = result.text !== current;
+        return result.text;
       });
     } finally {
       for (const upload of uploaded.values())
@@ -6986,8 +7144,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     if (!noteChanged)
       return { replaced: 0 };
     const localFiles = this.buildLocalFileRecords(candidates, uploaded);
-    for (const candidate of candidates)
-      replaced += candidate.refs.length;
     if (trashOriginals && localFiles.length > 0) {
       progress?.({
         phase: "trashing",
@@ -7441,12 +7597,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     }
     if (mirrorRoot) {
       for (const ref of extractLocalRefs(text)) {
-        let target = ref.target;
-        try {
-          target = decodeURIComponent(target);
-        } catch {
-        }
-        const key = cloudKeyFromLocalMirrorPath(target, mirrorRoot);
+        const key = cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot);
         if (key)
           keys.push(key);
       }
@@ -8161,7 +8312,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
       let failed = 0;
       const initialTotal = this.startupCatchupQueue.size;
       const notice = new import_obsidian7.Notice(this.t("startupCatchupWorking", { done: 0, total: initialTotal }), 0);
-      while (this.startupCatchupQueue.size > 0) {
+      while (!this.disposed && this.settings.enabled && this.startupCatchupQueue.size > 0) {
         let path;
         for (const queuedPath of this.startupCatchupQueue.keys()) {
           path = queuedPath;
@@ -8179,8 +8330,6 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         const succeeded = await this.autoTransferRemoteForFile(current, true);
         if (succeeded) {
           processed++;
-          this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths.filter((candidate) => candidate !== path);
-          await this.saveSettings();
         } else {
           failed++;
         }
@@ -8254,7 +8403,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     await this.saveSettings();
   }
   async initializeRuntimeState() {
-    if (this.runtimeInitialized || this.runtimeInitializing)
+    if (this.disposed || this.runtimeInitialized || this.runtimeInitializing)
       return;
     this.runtimeInitializing = true;
     try {
@@ -8266,6 +8415,8 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         changedDuringScan = generationBefore !== this.noteChangeGeneration;
         attempts++;
       } while (changedDuringScan && attempts < 3);
+      if (this.disposed)
+        return;
       if (changedDuringScan)
         throw new Error("Vault kept changing during startup indexing");
       this.runtimeInitialized = true;
@@ -8274,11 +8425,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         await this.startupPathIntegrityCheck();
       }
       await this.processPendingDeletes(false);
-      if (!this.isMobile && !this.deleteQueueTimer) {
+      if (!this.disposed && !this.isMobile && !this.deleteQueueTimer) {
         this.deleteQueueTimer = window.setInterval(() => void this.processPendingDeletes(false), 6e4);
       }
     } catch {
       this.runtimeInitialized = false;
+      if (this.disposed)
+        return;
       this.startupTimer = window.setTimeout(() => {
         this.startupTimer = null;
         void this.initializeRuntimeState();
@@ -8440,6 +8593,7 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     let replaced = 0;
     const total = candidates.length;
     let completed = 0;
+    let failed = 0;
     const heldLocks = [];
     try {
       for (const candidate of candidates) {
@@ -8468,17 +8622,18 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
           }
           const targetUrl = this.settings.linkMode === "local" && result.localPath ? result.localPath.split("/").map(encodeURIComponent).join("/") : result.publicUrl;
           for (const ref of candidate.refs) {
-            const newMarkdown = `![${escapeMarkdownLabel(ref.alt || originalName)}](${targetUrl})`;
+            const newMarkdown = ref.destinationStart === void 0 ? `![${escapeMarkdownLabel(ref.alt || originalName)}](${targetUrl})` : replaceRefTarget(ref, targetUrl);
             replacementMap.set(ref.raw, newMarkdown);
           }
           completed++;
         } catch (error) {
           new import_obsidian7.Notice(this.t("downloadFailed", { error: error instanceof Error ? error.message : String(error) }));
           completed++;
+          failed++;
         }
       }
       if (replacementMap.size === 0)
-        return { replaced: 0 };
+        return { replaced: 0, failed };
       if (!this.settings.enabled || !canMutate(this.getNotePathMode(noteFile.path))) {
         throw new Error(this.t("pathNoLongerManaged"));
       }
@@ -8489,14 +8644,10 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         label: noteFile.name
       });
       await this.app.vault.process(noteFile, (current) => {
-        let next = current;
-        for (const [raw, replacement] of replacementMap.entries()) {
-          if (next.includes(raw)) {
-            next = replaceAllLiteral(next, raw, replacement);
-            replaced++;
-          }
-        }
-        return next;
+        const result = rewriteLinkRefs(current, replacementMap);
+        replaced = result.count;
+        failed += [...replacementMap.keys()].filter((raw) => !result.applied.has(raw)).length;
+        return result.text;
       });
       progress?.({
         phase: "done",
@@ -8504,24 +8655,33 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         total,
         label: this.t("phaseDone")
       });
-      return { replaced };
+      return { replaced, failed };
     } finally {
       for (const key of heldLocks)
         this.releaseKeyOperation(key);
     }
   }
-  scheduleBackgroundImageSync(file) {
-    if (!this.settings.enabled || this.isIgnoredNote(file))
+  scheduleBackgroundImageSync(file, delay = 5e3, recordChange = true) {
+    if (this.disposed || !this.settings.enabled || this.isIgnoredNote(file))
       return;
     if (!this.settings.autoTransferRemoteImages && this.settings.linkMode !== "cloud")
       return;
+    if (recordChange) {
+      this.backgroundRevisions.set(file.path, (this.backgroundRevisions.get(file.path) || 0) + 1);
+    }
+    if (!this.settings.startupCatchupPendingPaths.includes(file.path)) {
+      this.settings.startupCatchupPendingPaths.push(file.path);
+    }
+    void this.saveSettings().catch(() => {
+      this.addLog({ status: "sync-intent-save-failed", notePath: file.path, sourcePath: "", remoteUrl: "" });
+    });
     const existing = this.remoteTransferDebounceTimers.get(file.path);
     if (existing)
       window.clearTimeout(existing);
     const timer = window.setTimeout(() => {
       this.remoteTransferDebounceTimers.delete(file.path);
       void this.autoTransferRemoteForFile(file);
-    }, 5e3);
+    }, delay);
     this.remoteTransferDebounceTimers.set(file.path, timer);
   }
   configureAutoRemoteTransfer() {
@@ -8550,8 +8710,48 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     );
   }
   async autoTransferRemoteForFile(file, silent = false) {
-    if (!this.settings.enabled || !canMutate(this.getNotePathMode(file.path)))
-      return true;
+    if (this.disposed || !this.settings.enabled || !canMutate(this.getNotePathMode(file.path)))
+      return false;
+    const path = file.path;
+    const existing = this.backgroundRuns.get(path);
+    if (existing)
+      return existing;
+    if (!this.settings.startupCatchupPendingPaths.includes(path))
+      this.settings.startupCatchupPendingPaths.push(path);
+    const revision = this.backgroundRevisions.get(path) || 0;
+    const run = (async () => {
+      try {
+        await this.saveSettings();
+        if (this.disposed || !this.settings.enabled)
+          return false;
+        const succeeded = await this.performBackgroundImageSync(file, silent);
+        if (succeeded && !this.disposed && file.path === path && revision === (this.backgroundRevisions.get(path) || 0)) {
+          this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths.filter((value) => value !== path);
+          await this.saveSettings();
+          this.backgroundFailures.delete(path);
+          return true;
+        }
+      } catch {
+        this.addLog({ status: "background-sync-incomplete", notePath: path, sourcePath: "", remoteUrl: "" });
+      }
+      if (!this.disposed && file.path === path && !this.remoteTransferDebounceTimers.has(path)) {
+        const failures = Math.min(7, (this.backgroundFailures.get(path) || 0) + 1);
+        this.backgroundFailures.set(path, failures);
+        this.scheduleBackgroundImageSync(file, Math.min(36e5, 6e4 * 2 ** (failures - 1)), false);
+      }
+      return false;
+    })();
+    this.backgroundRuns.set(path, run);
+    try {
+      return await run;
+    } finally {
+      if (this.backgroundRuns.get(path) === run)
+        this.backgroundRuns.delete(path);
+    }
+  }
+  async performBackgroundImageSync(file, silent) {
+    if (this.disposed || !this.settings.enabled || !canMutate(this.getNotePathMode(file.path)))
+      return false;
     try {
       this.ensureS3Settings();
     } catch {
@@ -8577,13 +8777,17 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         const candidates = await this.findRemoteCandidatesInNote(file);
         if (candidates.length > 0) {
           const result = await this.transferRemoteImagesInNote(file, candidates);
+          if (result.failed)
+            return false;
           if (!silent && result.replaced > 0) {
             new import_obsidian7.Notice(this.t("remoteTransferNotice", { count: result.replaced }));
           }
         }
       }
       if (this.settings.syncS3OnNoteMove && this.usesCanonicalNotePathTemplate()) {
-        await this.syncS3PathsForNote(file, file.path, false);
+        const result = await this.syncS3PathsForNote(file, file.path, false);
+        if (result.failed)
+          return false;
       }
       await this.cacheRemoteUrls(file);
       const snapshot = this.settings.noteSyncIndex[file.path];
@@ -8653,22 +8857,20 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
     }
     let changed = 0;
     await this.app.vault.process(noteFile, (content) => {
-      let next = content;
+      const replacements = /* @__PURE__ */ new Map();
       for (const ref of extractRemoteImageRefs(content)) {
         const cloudKey = this.remoteUrlToS3Key(ref.url);
         if (!cloudKey)
           continue;
         const localFile = this.findLocalMirrorForCloudKey(cloudKey, mirrorRoot);
-        if (!localFile || !next.includes(ref.raw))
-          continue;
-        const labelEnd = ref.raw.indexOf("](");
-        if (labelEnd < 0)
+        if (!localFile)
           continue;
         const encodedLocal = localFile.split("/").map(encodeURIComponent).join("/");
-        next = replaceAllLiteral(next, ref.raw, `${ref.raw.slice(0, labelEnd + 1)}(${encodedLocal})`);
-        changed++;
+        replacements.set(ref.raw, replaceRefTarget(ref, encodedLocal));
       }
-      return next;
+      const result = rewriteLinkRefs(content, replacements);
+      changed = result.count;
+      return result.text;
     });
     return changed;
   }
@@ -8841,7 +9043,21 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
   }
   // ─── S3 Path Sync on Note Rename ────────────────────────────────────
   async syncS3PathsOnRename(file, oldPath) {
+    if (this.disposed || !this.settings.enabled)
+      return;
+    const path = file.path;
+    const revision = this.backgroundRevisions.get(path) || 0;
+    if (!this.settings.startupCatchupPendingPaths.includes(path))
+      this.settings.startupCatchupPendingPaths.push(path);
+    await this.saveSettings();
+    this.ensureS3Settings();
     const result = await this.syncS3PathsForNote(file, oldPath, false);
+    if (result.failed === 0 && !this.disposed && this.settings.enabled && file.path === path && revision === (this.backgroundRevisions.get(path) || 0)) {
+      this.settings.startupCatchupPendingPaths = this.settings.startupCatchupPendingPaths.filter((value) => value !== path);
+      await this.saveSettings();
+    } else {
+      this.scheduleBackgroundImageSync(file, 6e4, false);
+    }
     if (result.fixed > 0)
       new import_obsidian7.Notice(this.t("s3PathSynced", { count: result.fixed }));
   }
@@ -8852,44 +9068,27 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
       replacements.set(oldValue, newValue);
       owners.set(oldValue, oldKey);
     };
-    const oldUrl = buildPublicUrl(
-      context.s3.customDomainName,
-      context.s3.endpoint,
-      context.s3.bucketName,
-      oldKey
-    );
     const newUrl = buildPublicUrl(
       context.s3.customDomainName,
       context.s3.endpoint,
       context.s3.bucketName,
       newKey
     );
-    add(oldUrl, newUrl);
     for (const ref of extractRemoteImageRefs(noteText)) {
       if (this.remoteUrlToS3Key(ref.url) === oldKey) {
-        add(ref.url, newUrl);
+        add(ref.raw, replaceRefTarget(ref, newUrl));
       }
     }
     const oldLocalPath = this.getLocalMirrorPathForCloudKey(oldKey, context.mirrorRoot);
     const newLocalPath = this.getLocalMirrorPathForCloudKey(newKey, context.mirrorRoot);
     if (!oldLocalPath || !newLocalPath)
       return;
-    add(oldLocalPath, newLocalPath);
-    add(
-      oldLocalPath.split("/").map(encodeURIComponent).join("/"),
-      newLocalPath.split("/").map(encodeURIComponent).join("/")
-    );
     const mirrorRoot = trimSlashes(context.mirrorRoot || "98 cloudflareR2");
     for (const ref of extractLocalRefs(noteText)) {
-      let decodedTarget = ref.target;
-      try {
-        decodedTarget = decodeURIComponent(ref.target);
-      } catch {
-      }
-      if (cloudKeyFromLocalMirrorPath(decodedTarget, mirrorRoot) !== oldKey)
+      if (cloudKeyFromLocalMirrorPath(ref.target, mirrorRoot) !== oldKey)
         continue;
-      const target = ref.target.includes("%") ? newLocalPath.split("/").map(encodeURIComponent).join("/") : newLocalPath;
-      add(ref.target, target);
+      const target = newLocalPath.split("/").map(encodeURIComponent).join("/");
+      add(ref.raw, replaceRefTarget(ref, ref.fragment ? `${target}#${encodeURIComponent(ref.fragment)}` : target));
     }
   }
   isPathMigrationContextCurrent(context, file) {
@@ -9069,16 +9268,13 @@ var _S3ImageSyncPlugin = class _S3ImageSyncPlugin extends import_obsidian7.Plugi
         if (!this.isPathMigrationContextCurrent(context, file)) {
           throw new Error(this.t("pathNoLongerManaged"));
         }
-        let next = content;
-        for (const [oldValue, newValue] of replacements) {
-          if (!next.includes(oldValue))
-            continue;
-          next = replaceAllLiteral(next, oldValue, newValue);
+        const result = rewriteLinkRefs(content, replacements);
+        for (const oldValue of result.applied) {
           const owner = replacementOwners.get(oldValue);
           if (owner)
             appliedOldKeys.add(owner);
         }
-        return next;
+        return result.text;
       });
       if (!this.isPathMigrationContextCurrent(context, file)) {
         return { fixed: 0, skipped, failed: failed + migrated.length };
